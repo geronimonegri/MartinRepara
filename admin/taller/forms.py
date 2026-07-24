@@ -79,13 +79,14 @@ class TrabajoForm(forms.ModelForm):
 class GastoForm(forms.ModelForm):
     class Meta:
         model = Gasto
-        fields = ['descripcion', 'monto', 'proveedor', 'categoria', 'fecha']
+        fields = ['descripcion', 'monto', 'proveedor', 'categoria', 'fecha', 'trabajo']
         labels = {
             'descripcion': 'Descripción',
             'monto': 'Monto',
             'proveedor': 'Proveedor',
             'categoria': 'Categoría',
             'fecha': 'Fecha',
+            'trabajo': 'Trabajo asociado',
         }
         widgets = {
             'descripcion': forms.TextInput(attrs={
@@ -106,8 +107,12 @@ class GastoForm(forms.ModelForm):
                 'class': 'form-control',
                 'type': 'date',
             }),
+            'trabajo': forms.Select(attrs={'class': 'form-control'}),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['monto'].required = True
+        self.fields['trabajo'].required = False
+        self.fields['trabajo'].queryset = Trabajo.objects.select_related('cliente').order_by('-fecha_ingreso')
+        self.fields['trabajo'].empty_label = 'Sin trabajo asociado (gasto general)'

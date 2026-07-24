@@ -21,7 +21,7 @@ class Cliente(models.Model):
 class TrabajoManager(models.Manager):
     def ingresos_mes(self, anio, mes):
         total = self.filter(
-            fecha_entrega__year=anio, fecha_entrega__month=mes
+            fecha_pago__year=anio, fecha_pago__month=mes
         ).aggregate(total=Sum('precio_acordado'))['total']
         return total or Decimal('0')
 
@@ -62,6 +62,7 @@ class Trabajo(models.Model):
     )
     fecha_ingreso = models.DateField('fecha de ingreso')
     fecha_entrega = models.DateField('fecha de entrega', null=True, blank=True)
+    fecha_pago = models.DateField('fecha de pago', null=True, blank=True)
 
     objects = TrabajoManager()
 
@@ -101,6 +102,14 @@ class Gasto(models.Model):
     monto = models.DecimalField(max_digits=10, decimal_places=2)
     categoria = models.CharField(max_length=20, choices=Categoria.choices)
     fecha = models.DateField()
+    trabajo = models.ForeignKey(
+        Trabajo,
+        verbose_name='trabajo asociado',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='gastos',
+    )
 
     objects = GastoManager()
 

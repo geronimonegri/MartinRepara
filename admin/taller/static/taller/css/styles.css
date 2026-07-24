@@ -119,6 +119,10 @@ a { text-decoration: none; color: inherit; }
 .btn-outline { background: #fff; color: var(--text-main); border-color: var(--border); }
 .btn-outline:hover { background: #f8fafc; }
 
+.btn-sm { padding: 6px 12px; font-size: 0.78rem; white-space: nowrap; }
+
+.pago-info { font-size: 0.82rem; font-weight: 600; color: var(--mint-text); white-space: nowrap; }
+
 /* ---------- Dashboard ---------- */
 
 .dashboard-grid { display: flex; gap: 24px; align-items: flex-start; }
@@ -243,6 +247,8 @@ a { text-decoration: none; color: inherit; }
 }
 
 .trabajos-table tbody tr:last-child td { border-bottom: none; }
+
+.js-empty-row { display: none; }
 
 .problema-cell { color: #374151; max-width: 260px; }
 

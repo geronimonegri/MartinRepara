@@ -13,10 +13,9 @@
 </div>
 
 <div class="toolbar">
-    <form method="get" class="search-form">
-        {% if estado_filter %}<input type="hidden" name="estado" value="{{ estado_filter }}">{% endif %}
-        <input type="text" name="q" value="{{ query }}" placeholder="Buscar por nombre de cliente..." class="search-input">
-    </form>
+    <div class="search-form">
+        <input type="text" id="trabajo-search" value="{{ query }}" placeholder="Buscar por nombre de cliente..." class="search-input" autocomplete="off">
+    </div>
     <div class="chip-group">
         <a href="?q={{ query|urlencode }}" class="chip {% if not estado_filter %}active{% endif %}">Todos</a>
         {% for value, label in estados %}
@@ -36,11 +35,12 @@
                 <th>Precio</th>
                 <th>Ingreso</th>
                 <th>Entrega</th>
+                <th>Pago</th>
             </tr>
         </thead>
         <tbody>
             {% for trabajo in trabajos %}
-                <tr>
+                <tr data-cliente="{{ trabajo.cliente.nombre|lower }}">
                     <td>
                         <div class="row-title">{{ trabajo.cliente.nombre }}</div>
                         <div class="row-subtitle">{{ trabajo.cliente.telefono }}</div>
@@ -66,13 +66,76 @@
                     <td>{{ trabajo.precio_acordado|moneda }}</td>
                     <td>{{ trabajo.fecha_ingreso|date:"d/m/Y" }}</td>
                     <td>{{ trabajo.fecha_entrega|date:"d/m/Y"|default:"—" }}</td>
+                    <td>
+                        {% if trabajo.fecha_pago %}
+                            <span class="pago-info">Pagado el {{ trabajo.fecha_pago|date:"d/m" }}</span>
+                        {% elif trabajo.estado == 'entregado' %}
+                            <form method="post" action="{% url 'taller:trabajo_marcar_pagado' trabajo.pk %}" class="estado-form">
+                                {% csrf_token %}
+                                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                <button type="submit" class="btn btn-outline btn-sm">Marcar como pagado</button>
+                            </form>
+                        {% else %}
+                            <span class="row-subtitle">—</span>
+                        {% endif %}
+                    </td>
                 </tr>
             {% empty %}
                 <tr>
-                    <td colspan="7" class="empty-state">No se encontraron trabajos.</td>
+                    <td colspan="8" class="empty-state">No se encontraron trabajos.</td>
                 </tr>
             {% endfor %}
         </tbody>
     </table>
+    <div id="js-empty-row" class="empty-state js-empty-row">No se encontraron trabajos.</div>
 </div>
+
+<script>
+(function () {
+    var input = document.getElementById('trabajo-search');
+    var rows = document.querySelectorAll('.trabajos-table tbody tr[data-cliente]');
+    var emptyRow = document.getElementById('js-empty-row');
+    var chips = document.querySelectorAll('.chip-group .chip');
+
+    if (!input) { return; }
+
+    function normalizar(str) {
+        // NFD separa "í" en "i" + acento combinante (U+0300-U+036F);
+        // se descartan esos puntos de código para comparar sin tildes.
+        return str.normalize('NFD').split('').filter(function (ch) {
+            var code = ch.charCodeAt(0);
+            return code < 0x0300 || code > 0x036f;
+        }).join('');
+    }
+
+    function applyFilter() {
+        var term = normalizar(input.value.trim().toLowerCase());
+        var visibleCount = 0;
+
+        rows.forEach(function (row) {
+            var nombre = normalizar(row.getAttribute('data-cliente'));
+            var matches = nombre.indexOf(term) !== -1;
+            row.style.display = matches ? '' : 'none';
+            if (matches) { visibleCount += 1; }
+        });
+
+        if (emptyRow) {
+            emptyRow.style.display = (rows.length > 0 && visibleCount === 0) ? '' : 'none';
+        }
+
+        chips.forEach(function (chip) {
+            var url = new URL(chip.href, window.location.href);
+            if (term) {
+                url.searchParams.set('q', input.value.trim());
+            } else {
+                url.searchParams.delete('q');
+            }
+            chip.href = url.pathname + url.search;
+        });
+    }
+
+    input.addEventListener('input', applyFilter);
+    applyFilter();
+})();
+</script>
 {% endblock %}

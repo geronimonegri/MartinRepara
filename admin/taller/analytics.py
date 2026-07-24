@@ -12,7 +12,7 @@ from .models import Gasto, Trabajo
 
 
 def balance_mensual(anio, mes):
-    """Ingresos (trabajos entregados en el mes) menos gastos del mes."""
+    """Ingresos (trabajos pagados en el mes) menos gastos del mes."""
     return Trabajo.objects.balance_mensual(anio, mes)
 
 

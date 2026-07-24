@@ -56,6 +56,18 @@ def trabajo_estado_update(request, pk):
     return redirect(next_url)
 
 
+@require_POST
+def trabajo_marcar_pagado(request, pk):
+    trabajo = get_object_or_404(Trabajo, pk=pk)
+
+    if trabajo.estado == Trabajo.Estado.ENTREGADO and trabajo.fecha_pago is None:
+        trabajo.fecha_pago = timezone.now().date()
+        trabajo.save()
+
+    next_url = request.POST.get('next') or reverse('taller:trabajos_list')
+    return redirect(next_url)
+
+
 def trabajo_create(request):
     if request.method == 'POST':
         form = TrabajoForm(request.POST)
