@@ -27,11 +27,13 @@
 </div>
 
 <div class="stat-row">
-    <div class="stat-card">
-        <div class="stat-label">Ingresos pendientes</div>
-        <div class="stat-value">{{ ingresos_pendientes|moneda }}</div>
-        <div class="stat-subtitle">{{ trabajos_listos_count }} trabajo(s) listos, sin entregar</div>
-    </div>
+    {% if es_mes_actual %}
+        <div class="stat-card">
+            <div class="stat-label">Ingresos pendientes</div>
+            <div class="stat-value">{{ ingresos_pendientes|moneda }}</div>
+            <div class="stat-subtitle">{{ trabajos_listos_count }} trabajo(s) listos, sin entregar</div>
+        </div>
+    {% endif %}
     <div class="stat-card">
         <div class="stat-label">Ticket promedio</div>
         <div class="stat-value">{{ ticket_promedio|moneda }}</div>

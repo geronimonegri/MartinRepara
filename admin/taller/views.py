@@ -110,6 +110,8 @@ def balance(request):
         for value, label in Trabajo.Estado.choices
     ]
 
+    es_mes_actual = (anio, mes) == (hoy.year, hoy.month)
+
     context = {
         'anio': anio,
         'mes': mes,
@@ -121,11 +123,16 @@ def balance(request):
         'comparacion': comparacion,
         'categorias': categorias,
         'estados_grid': estados_grid,
-        'ingresos_pendientes': analytics.ingresos_pendientes(),
-        'trabajos_listos_count': Trabajo.objects.filter(estado=Trabajo.Estado.LISTO).count(),
+        'es_mes_actual': es_mes_actual,
         'ticket_promedio': analytics.ticket_promedio(anio, mes),
         'entregados_mes_count': Trabajo.objects.filter(
             fecha_entrega__year=anio, fecha_entrega__month=mes
         ).count(),
     }
+    if es_mes_actual:
+        context['ingresos_pendientes'] = analytics.ingresos_pendientes()
+        context['trabajos_listos_count'] = Trabajo.objects.filter(
+            estado=Trabajo.Estado.LISTO
+        ).count()
+
     return render(request, 'taller/balance.html', context)
