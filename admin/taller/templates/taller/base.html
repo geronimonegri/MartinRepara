@@ -1,0 +1,45 @@
+{% load static taller_extras %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Gestión Taller{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'taller/css/styles.css' %}">
+</head>
+<body>
+    <div class="app-shell">
+        <aside class="sidebar">
+            <div class="sidebar-brand">
+                <div class="sidebar-title">Gestión Taller</div>
+                <div class="sidebar-subtitle">Reparaciones</div>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="{% url 'taller:dashboard' %}" class="nav-item {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
+                    {% nav_icon 'dashboard' %}
+                    <span>Dashboard</span>
+                </a>
+                <a href="{% url 'taller:trabajos_list' %}" class="nav-item {% if request.resolver_match.url_name == 'trabajos_list' %}active{% endif %}">
+                    {% nav_icon 'list' %}
+                    <span>Trabajos</span>
+                </a>
+                <a href="{% url 'taller:balance' %}" class="nav-item {% if request.resolver_match.url_name == 'balance' %}active{% endif %}">
+                    {% nav_icon 'bar-chart' %}
+                    <span>Balance</span>
+                </a>
+                <a href="{% url 'taller:trabajo_create' %}" class="nav-item {% if request.resolver_match.url_name == 'trabajo_create' %}active{% endif %}">
+                    {% nav_icon 'wrench' %}
+                    <span>Nuevo trabajo</span>
+                </a>
+                <a href="{% url 'taller:gasto_create' %}" class="nav-item {% if request.resolver_match.url_name == 'gasto_create' %}active{% endif %}">
+                    {% nav_icon 'file-text' %}
+                    <span>Nuevo gasto</span>
+                </a>
+            </nav>
+        </aside>
+        <main class="content">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+</body>
+</html>

@@ -1,0 +1,78 @@
+{% extends 'taller/base.html' %}
+{% load taller_extras %}
+
+{% block title %}Trabajos · Gestión Taller{% endblock %}
+
+{% block content %}
+<div class="page-header-row">
+    <h1 class="page-title">Trabajos</h1>
+    <a href="{% url 'taller:trabajo_create' %}" class="btn btn-primary">
+        {% nav_icon 'plus' %}
+        <span>Nuevo trabajo</span>
+    </a>
+</div>
+
+<div class="toolbar">
+    <form method="get" class="search-form">
+        {% if estado_filter %}<input type="hidden" name="estado" value="{{ estado_filter }}">{% endif %}
+        <input type="text" name="q" value="{{ query }}" placeholder="Buscar por nombre de cliente..." class="search-input">
+    </form>
+    <div class="chip-group">
+        <a href="?q={{ query|urlencode }}" class="chip {% if not estado_filter %}active{% endif %}">Todos</a>
+        {% for value, label in estados %}
+            <a href="?q={{ query|urlencode }}&estado={{ value }}" class="chip {% if estado_filter == value %}active{% endif %}">{{ label }}</a>
+        {% endfor %}
+    </div>
+</div>
+
+<div class="table-card">
+    <table class="trabajos-table">
+        <thead>
+            <tr>
+                <th>Cliente</th>
+                <th>Dispositivo</th>
+                <th>Problema</th>
+                <th>Estado</th>
+                <th>Precio</th>
+                <th>Ingreso</th>
+                <th>Entrega</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for trabajo in trabajos %}
+                <tr>
+                    <td>
+                        <div class="row-title">{{ trabajo.cliente.nombre }}</div>
+                        <div class="row-subtitle">{{ trabajo.cliente.telefono }}</div>
+                    </td>
+                    <td>
+                        <div class="device-cell">
+                            {% device_icon trabajo.dispositivo_tipo %}
+                            <span>{{ trabajo.get_dispositivo_tipo_display }}</span>
+                        </div>
+                    </td>
+                    <td class="problema-cell">{{ trabajo.descripcion_problema }}</td>
+                    <td>
+                        <form method="post" action="{% url 'taller:trabajo_estado_update' trabajo.pk %}" class="estado-form">
+                            {% csrf_token %}
+                            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                            <select name="estado" class="estado-select estado-{{ trabajo.estado }}" onchange="this.form.submit()">
+                                {% for value, label in estados %}
+                                    <option value="{{ value }}" {% if trabajo.estado == value %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </form>
+                    </td>
+                    <td>{{ trabajo.precio_acordado|moneda }}</td>
+                    <td>{{ trabajo.fecha_ingreso|date:"d/m/Y" }}</td>
+                    <td>{{ trabajo.fecha_entrega|date:"d/m/Y"|default:"—" }}</td>
+                </tr>
+            {% empty %}
+                <tr>
+                    <td colspan="7" class="empty-state">No se encontraron trabajos.</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

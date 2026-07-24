@@ -1,0 +1,66 @@
+{% extends 'taller/base.html' %}
+{% load taller_extras %}
+
+{% block title %}Nuevo trabajo · Gestión Taller{% endblock %}
+
+{% block content %}
+<h1 class="page-title">Nuevo trabajo</h1>
+
+<div class="form-card">
+    <form method="post" novalidate>
+        {% csrf_token %}
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="{{ form.cliente_nombre.id_for_label }}">{{ form.cliente_nombre.label }}</label>
+                {{ form.cliente_nombre }}
+                {% for error in form.cliente_nombre.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+            </div>
+            <div class="form-group">
+                <label for="{{ form.cliente_telefono.id_for_label }}">{{ form.cliente_telefono.label }}</label>
+                {{ form.cliente_telefono }}
+                {% for error in form.cliente_telefono.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>{{ form.dispositivo_tipo.label }}</label>
+            <div class="option-grid device-grid">
+                {% for value, label in form.fields.dispositivo_tipo.choices %}
+                    <label class="device-option">
+                        <input type="radio" name="dispositivo_tipo" value="{{ value }}" class="hidden-radio"
+                               {% if form.dispositivo_tipo.value == value %}checked{% endif %}>
+                        {% device_icon value %}
+                        <span>{{ label }}</span>
+                    </label>
+                {% endfor %}
+            </div>
+            {% for error in form.dispositivo_tipo.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+        </div>
+
+        <div class="form-group">
+            <label for="{{ form.descripcion_problema.id_for_label }}">{{ form.descripcion_problema.label }}</label>
+            {{ form.descripcion_problema }}
+            {% for error in form.descripcion_problema.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="{{ form.precio_acordado.id_for_label }}">{{ form.precio_acordado.label }}</label>
+                {{ form.precio_acordado }}
+                {% for error in form.precio_acordado.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+            </div>
+            <div class="form-group">
+                <label for="{{ form.fecha_ingreso.id_for_label }}">{{ form.fecha_ingreso.label }}</label>
+                {{ form.fecha_ingreso }}
+                {% for error in form.fecha_ingreso.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+            </div>
+        </div>
+
+        <div class="form-actions">
+            <a href="{% url 'taller:trabajos_list' %}" class="btn btn-outline">Cancelar</a>
+            <button type="submit" class="btn btn-primary">Guardar trabajo</button>
+        </div>
+    </form>
+</div>
+{% endblock %}

@@ -1,0 +1,72 @@
+{% extends 'taller/base.html' %}
+{% load taller_extras %}
+
+{% block title %}Balance · Gestión Taller{% endblock %}
+
+{% block content %}
+<div class="page-header-row balance-header">
+    <div>
+        <h1 class="page-title">Balance</h1>
+        <div class="page-subtitle">{{ mes_fecha|date:"F Y"|capfirst }}</div>
+    </div>
+    <form method="get" class="month-form">
+        <input type="month" name="mes" value="{{ mes_input_value }}" class="month-input" onchange="this.form.submit()">
+    </form>
+</div>
+
+<div class="balance-card {% if balance_total >= 0 %}balance-positive{% else %}balance-negative{% endif %}">
+    {% if comparacion.variacion_pct is not None %}
+        <span class="variation-badge {% if comparacion.variacion_pct >= 0 %}up{% else %}down{% endif %}">
+            {% if comparacion.variacion_pct >= 0 %}▲{% else %}▼{% endif %}
+            {% if comparacion.variacion_pct >= 0 %}+{% endif %}{{ comparacion.variacion_pct|floatformat:0 }}% vs. mes anterior
+        </span>
+    {% endif %}
+    <div class="balance-label">Balance del mes</div>
+    <div class="balance-amount">{{ balance_total|moneda }}</div>
+    <div class="balance-detail">Ingresos {{ ingresos|moneda }} · Gastos {{ gastos|moneda }}</div>
+</div>
+
+<div class="stat-row">
+    <div class="stat-card">
+        <div class="stat-label">Ingresos pendientes</div>
+        <div class="stat-value">{{ ingresos_pendientes|moneda }}</div>
+        <div class="stat-subtitle">{{ trabajos_listos_count }} trabajo(s) listos, sin entregar</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Ticket promedio</div>
+        <div class="stat-value">{{ ticket_promedio|moneda }}</div>
+        <div class="stat-subtitle">{{ entregados_mes_count }} trabajo(s) entregados este mes</div>
+    </div>
+</div>
+
+<div class="bottom-row">
+    <div class="panel-card">
+        <h2 class="panel-title">Gastos por categoría</h2>
+        {% for categoria in categorias %}
+            <div class="category-bar-row">
+                <div class="category-bar-header">
+                    <span>{{ categoria.label }}</span>
+                    <span>{{ categoria.total|moneda }}</span>
+                </div>
+                <div class="category-bar-track">
+                    <div class="category-bar-fill category-{{ categoria.categoria }}" style="width: {{ categoria.pct }}%;"></div>
+                </div>
+            </div>
+        {% empty %}
+            <div class="empty-state">No hay gastos cargados este mes.</div>
+        {% endfor %}
+    </div>
+
+    <div class="panel-card">
+        <h2 class="panel-title">Trabajos por estado</h2>
+        <div class="estado-grid">
+            {% for estado in estados_grid %}
+                <div class="estado-card estado-card-{{ estado.value }}">
+                    <div class="estado-card-number">{{ estado.cantidad }}</div>
+                    <div class="estado-card-label">{{ estado.label }}</div>
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}

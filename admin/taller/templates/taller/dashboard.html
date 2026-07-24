@@ -1,0 +1,50 @@
+{% extends 'taller/base.html' %}
+{% load taller_extras %}
+
+{% block title %}Dashboard · Gestión Taller{% endblock %}
+
+{% block content %}
+<h1 class="page-title">Dashboard</h1>
+
+<div class="dashboard-grid">
+    <section class="dashboard-col dashboard-col-main">
+        <h2 class="section-title">Trabajos pendientes ({{ pendientes|length }})</h2>
+        <div class="list-card">
+            {% for trabajo in pendientes %}
+                <div class="list-row">
+                    <div class="list-row-main">
+                        <div class="row-icon">{% device_icon trabajo.dispositivo_tipo %}</div>
+                        <div>
+                            <div class="row-title">{{ trabajo.cliente.nombre }}</div>
+                            <div class="row-subtitle">{{ trabajo.descripcion_problema }}</div>
+                        </div>
+                    </div>
+                    <div class="list-row-side">
+                        <span class="row-price">{{ trabajo.precio_acordado|moneda }}</span>
+                        <span class="row-estado">{{ trabajo.get_estado_display }}</span>
+                    </div>
+                </div>
+            {% empty %}
+                <div class="empty-state">No hay trabajos pendientes.</div>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="dashboard-col dashboard-col-side">
+        <h2 class="section-title">Últimos gastos</h2>
+        <div class="list-card">
+            {% for gasto in ultimos_gastos %}
+                <div class="list-row">
+                    <div>
+                        <div class="row-title">{{ gasto.descripcion }}</div>
+                        <div class="row-subtitle">{{ gasto.fecha|date:"d/m/Y" }} · {{ gasto.get_categoria_display }}</div>
+                    </div>
+                    <div class="row-gasto-monto">-{{ gasto.monto|moneda }}</div>
+                </div>
+            {% empty %}
+                <div class="empty-state">No hay gastos cargados.</div>
+            {% endfor %}
+        </div>
+    </section>
+</div>
+{% endblock %}
