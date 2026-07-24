@@ -1,12 +1,18 @@
 from django.contrib import admin
 
-from .models import Gasto, Trabajo
+from .models import Cliente, Gasto, Trabajo
+
+
+@admin.register(Cliente)
+class ClienteAdmin(admin.ModelAdmin):
+    list_display = ('nombre', 'telefono', 'email')
+    search_fields = ('nombre', 'telefono')
 
 
 @admin.register(Trabajo)
 class TrabajoAdmin(admin.ModelAdmin):
     list_display = (
-        'cliente_nombre',
+        'cliente',
         'dispositivo_tipo',
         'estado',
         'precio_acordado',
@@ -14,7 +20,12 @@ class TrabajoAdmin(admin.ModelAdmin):
         'fecha_entrega',
     )
     list_filter = ('dispositivo_tipo', 'estado', 'fecha_ingreso')
-    search_fields = ('cliente_nombre', 'cliente_telefono', 'descripcion_problema')
+    search_fields = (
+        'cliente__nombre',
+        'cliente__telefono',
+        'descripcion_problema',
+    )
+    autocomplete_fields = ('cliente',)
     date_hierarchy = 'fecha_ingreso'
 
 
