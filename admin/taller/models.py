@@ -18,25 +18,28 @@ class Cliente(models.Model):
         return self.nombre
 
 
-class TrabajoManager(models.Manager):
-    def ingresos_mes(self, anio, mes):
-        total = self.filter(
-            fecha_pago__year=anio, fecha_pago__month=mes
-        ).aggregate(total=Sum('precio_acordado'))['total']
-        return total or Decimal('0')
-
-    def balance_mensual(self, anio, mes):
-        ingresos = self.ingresos_mes(anio, mes)
-        gastos = Gasto.objects.total_mes(anio, mes)
-        return ingresos - gastos
-
-
 class Trabajo(models.Model):
-    class TipoDispositivo(models.TextChoices):
+    class CategoriaDispositivo(models.TextChoices):
         CELULAR = 'celular', 'Celular'
-        JOYSTICK = 'joystick', 'Joystick'
-        PS4 = 'ps4', 'PS4'
+        CONSOLA = 'consola', 'Consola'
         NOTEBOOK = 'notebook', 'Notebook'
+        OTRO = 'otro', 'Otro'
+
+    class SubtipoCelular(models.TextChoices):
+        ANDROID = 'android', 'Android'
+        IOS = 'ios', 'iOS'
+        OTRO = 'otro', 'Otro'
+
+    class SubtipoConsola(models.TextChoices):
+        PS4 = 'ps4', 'PS4'
+        PS5 = 'ps5', 'PS5'
+        XBOX = 'xbox', 'Xbox'
+        OTRO = 'otro', 'Otro'
+
+    SUBTIPOS_POR_CATEGORIA = {
+        CategoriaDispositivo.CELULAR: SubtipoCelular,
+        CategoriaDispositivo.CONSOLA: SubtipoConsola,
+    }
 
     class Estado(models.TextChoices):
         RECIBIDO = 'recibido', 'Recibido'
@@ -50,8 +53,11 @@ class Trabajo(models.Model):
         on_delete=models.PROTECT,
         related_name='trabajos',
     )
-    dispositivo_tipo = models.CharField(
-        'tipo de dispositivo', max_length=20, choices=TipoDispositivo.choices
+    categoria_dispositivo = models.CharField(
+        'categoría de dispositivo', max_length=20, choices=CategoriaDispositivo.choices
+    )
+    subtipo_dispositivo = models.CharField(
+        'subtipo de dispositivo', max_length=20, blank=True
     )
     descripcion_problema = models.TextField('descripción del problema')
     estado = models.CharField(
@@ -62,17 +68,33 @@ class Trabajo(models.Model):
     )
     fecha_ingreso = models.DateField('fecha de ingreso')
     fecha_entrega = models.DateField('fecha de entrega', null=True, blank=True)
-    fecha_pago = models.DateField('fecha de pago', null=True, blank=True)
-
-    objects = TrabajoManager()
 
     class Meta:
         verbose_name = 'trabajo'
         verbose_name_plural = 'trabajos'
         ordering = ['-fecha_ingreso']
 
+    def total_pagado(self):
+        total = self.pagos.aggregate(total=Sum('monto'))['total']
+        return total or Decimal('0')
+
+    def esta_pagado(self):
+        if self.precio_acordado is None:
+            return False
+        return self.total_pagado() >= self.precio_acordado
+
+    def get_subtipo_dispositivo_display(self):
+        subtipo_choices = self.SUBTIPOS_POR_CATEGORIA.get(self.categoria_dispositivo)
+        if not subtipo_choices or not self.subtipo_dispositivo:
+            return ''
+        return dict(subtipo_choices.choices).get(self.subtipo_dispositivo, self.subtipo_dispositivo)
+
     def __str__(self):
-        return f'{self.cliente.nombre} - {self.get_dispositivo_tipo_display()} ({self.get_estado_display()})'
+        dispositivo = self.get_categoria_dispositivo_display()
+        subtipo_label = self.get_subtipo_dispositivo_display()
+        if subtipo_label:
+            dispositivo += f' {subtipo_label}'
+        return f'{self.cliente.nombre} - {dispositivo} ({self.get_estado_display()})'
 
 
 class GastoManager(models.Manager):
@@ -95,6 +117,7 @@ class Gasto(models.Model):
     class Categoria(models.TextChoices):
         REPUESTO = 'repuesto', 'Repuesto'
         HERRAMIENTA = 'herramienta', 'Herramienta'
+        TALLER = 'taller', 'Taller'
         OTRO = 'otro', 'Otro'
 
     descripcion = models.CharField(max_length=255)
@@ -120,3 +143,50 @@ class Gasto(models.Model):
 
     def __str__(self):
         return f'{self.descripcion} - ${self.monto} ({self.fecha})'
+
+
+class PagoManager(models.Manager):
+    def total_mes(self, anio, mes):
+        total = self.filter(fecha__year=anio, fecha__month=mes).aggregate(
+            total=Sum('monto')
+        )['total']
+        return total or Decimal('0')
+
+    def por_categoria_dispositivo_mes(self, anio, mes):
+        return (
+            self.filter(fecha__year=anio, fecha__month=mes)
+            .values('trabajo__categoria_dispositivo')
+            .annotate(total=Sum('monto'))
+            .order_by('-total')
+        )
+
+
+class Pago(models.Model):
+    class FormaPago(models.TextChoices):
+        EFECTIVO = 'efectivo', 'Efectivo'
+        TRANSFERENCIA = 'transferencia', 'Transferencia'
+        TARJETA = 'tarjeta', 'Tarjeta'
+        OTRO = 'otro', 'Otro'
+
+    monto = models.DecimalField(max_digits=10, decimal_places=2)
+    forma_pago = models.CharField(
+        'forma de pago', max_length=20, choices=FormaPago.choices
+    )
+    fecha = models.DateField()
+    trabajo = models.ForeignKey(
+        Trabajo,
+        verbose_name='trabajo',
+        on_delete=models.PROTECT,
+        related_name='pagos',
+    )
+    detalle = models.TextField('detalle', blank=True)
+
+    objects = PagoManager()
+
+    class Meta:
+        verbose_name = 'pago'
+        verbose_name_plural = 'pagos'
+        ordering = ['-fecha', '-id']
+
+    def __str__(self):
+        return f'{self.trabajo.cliente.nombre} - ${self.monto} ({self.fecha})'

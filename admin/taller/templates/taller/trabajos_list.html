@@ -36,6 +36,7 @@
                 <th>Ingreso</th>
                 <th>Entrega</th>
                 <th>Pago</th>
+                <th>Acciones</th>
             </tr>
         </thead>
         <tbody>
@@ -47,8 +48,8 @@
                     </td>
                     <td>
                         <div class="device-cell">
-                            {% device_icon trabajo.dispositivo_tipo %}
-                            <span>{{ trabajo.get_dispositivo_tipo_display }}</span>
+                            {% device_icon trabajo.categoria_dispositivo %}
+                            <span>{{ trabajo.get_categoria_dispositivo_display }}{% if trabajo.subtipo_dispositivo %} · {{ trabajo.get_subtipo_dispositivo_display }}{% endif %}</span>
                         </div>
                     </td>
                     <td class="problema-cell">{{ trabajo.descripcion_problema }}</td>
@@ -67,22 +68,35 @@
                     <td>{{ trabajo.fecha_ingreso|date:"d/m/Y" }}</td>
                     <td>{{ trabajo.fecha_entrega|date:"d/m/Y"|default:"—" }}</td>
                     <td>
-                        {% if trabajo.fecha_pago %}
-                            <span class="pago-info">Pagado el {{ trabajo.fecha_pago|date:"d/m" }}</span>
-                        {% elif trabajo.estado == 'entregado' %}
-                            <form method="post" action="{% url 'taller:trabajo_marcar_pagado' trabajo.pk %}" class="estado-form">
-                                {% csrf_token %}
-                                <input type="hidden" name="next" value="{{ request.get_full_path }}">
-                                <button type="submit" class="btn btn-outline btn-sm">Marcar como pagado</button>
-                            </form>
+                        {% if trabajo.esta_pagado_calc %}
+                            <a href="{% url 'taller:pago_create' %}?mes={{ trabajo.ultimo_pago.fecha|date:'Y-m' }}#pago-{{ trabajo.ultimo_pago.pk }}" class="pago-info">
+                                Pagado el {{ trabajo.ultimo_pago.fecha|date:"d/m" }} · Pago #{{ trabajo.ultimo_pago.pk }}
+                            </a>
+                        {% elif trabajo.total_pagado_calc > 0 and trabajo.precio_acordado %}
+                            <span class="pago-parcial">Pagado parcial: {{ trabajo.total_pagado_calc|moneda }} de {{ trabajo.precio_acordado|moneda }}</span>
+                        {% elif trabajo.total_pagado_calc > 0 %}
+                            <span class="pago-parcial">Pagado parcial: {{ trabajo.total_pagado_calc|moneda }}</span>
                         {% else %}
                             <span class="row-subtitle">—</span>
                         {% endif %}
                     </td>
+                    <td>
+                        <div class="row-actions">
+                            <a href="{% url 'taller:trabajo_edit' trabajo.pk %}" class="icon-btn" aria-label="Editar trabajo" title="Editar">
+                                {% nav_icon 'edit' %}
+                            </a>
+                            <form method="post" action="{% url 'taller:trabajo_delete' trabajo.pk %}" class="icon-form trabajo-delete-form" data-cliente="{{ trabajo.cliente.nombre }}">
+                                {% csrf_token %}
+                                <button type="submit" class="icon-btn icon-btn-danger" aria-label="Eliminar trabajo" title="Eliminar">
+                                    {% nav_icon 'trash' %}
+                                </button>
+                            </form>
+                        </div>
+                    </td>
                 </tr>
             {% empty %}
                 <tr>
-                    <td colspan="8" class="empty-state">No se encontraron trabajos.</td>
+                    <td colspan="9" class="empty-state">No se encontraron trabajos.</td>
                 </tr>
             {% endfor %}
         </tbody>
@@ -136,6 +150,20 @@
 
     input.addEventListener('input', applyFilter);
     applyFilter();
+})();
+
+(function () {
+    document.querySelectorAll('.trabajo-delete-form').forEach(function (form) {
+        form.addEventListener('submit', function (event) {
+            var nombre = form.getAttribute('data-cliente');
+            var confirmado = window.confirm(
+                '¿Estás seguro que querés eliminar el trabajo de ' + nombre + '? Esta acción no se puede deshacer.'
+            );
+            if (!confirmado) {
+                event.preventDefault();
+            }
+        });
+    });
 })();
 </script>
 {% endblock %}

@@ -33,7 +33,11 @@
                 </a>
                 <a href="{% url 'taller:gasto_create' %}" class="nav-item {% if request.resolver_match.url_name == 'gasto_create' %}active{% endif %}">
                     {% nav_icon 'file-text' %}
-                    <span>Nuevo gasto</span>
+                    <span>Gastos</span>
+                </a>
+                <a href="{% url 'taller:pago_create' %}" class="nav-item {% if request.resolver_match.url_name == 'pago_create' or request.resolver_match.url_name == 'pago_edit' %}active{% endif %}">
+                    {% nav_icon 'dollar-sign' %}
+                    <span>Pagos</span>
                 </a>
             </nav>
         </aside>

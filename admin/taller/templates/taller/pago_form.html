@@ -1,21 +1,15 @@
 {% extends 'taller/base.html' %}
 {% load taller_extras %}
 
-{% block title %}Nuevo gasto · Gestión Taller{% endblock %}
+{% block title %}{% if form.instance.pk %}Editar pago{% else %}Nuevo pago{% endif %} · Gestión Taller{% endblock %}
 
 {% block content %}
-<h1 class="page-title">Nuevo gasto</h1>
+<h1 class="page-title">{% if form.instance.pk %}Editar pago{% else %}Nuevo pago{% endif %}</h1>
 
 <div class="gasto-page-grid">
     <div class="form-card">
         <form method="post" novalidate>
             {% csrf_token %}
-
-            <div class="form-group">
-                <label for="{{ form.descripcion.id_for_label }}">{{ form.descripcion.label }}</label>
-                {{ form.descripcion }}
-                {% for error in form.descripcion.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
-            </div>
 
             <div class="form-group">
                 <label for="{{ form.monto.id_for_label }}">{{ form.monto.label }}</label>
@@ -24,23 +18,17 @@
             </div>
 
             <div class="form-group">
-                <label for="{{ form.proveedor.id_for_label }}">{{ form.proveedor.label }}</label>
-                {{ form.proveedor }}
-                {% for error in form.proveedor.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
-            </div>
-
-            <div class="form-group">
-                <label>{{ form.categoria.label }}</label>
+                <label>{{ form.forma_pago.label }}</label>
                 <div class="option-grid category-grid">
-                    {% for value, label in form.fields.categoria.choices %}
+                    {% for value, label in form.fields.forma_pago.choices %}
                         <label class="category-option">
-                            <input type="radio" name="categoria" value="{{ value }}" class="hidden-radio"
-                                   {% if form.categoria.value == value %}checked{% endif %}>
+                            <input type="radio" name="forma_pago" value="{{ value }}" class="hidden-radio"
+                                   {% if form.forma_pago.value == value %}checked{% endif %}>
                             <span>{{ label }}</span>
                         </label>
                     {% endfor %}
                 </div>
-                {% for error in form.categoria.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+                {% for error in form.forma_pago.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
             </div>
 
             <div class="form-group">
@@ -55,16 +43,22 @@
                 {% for error in form.trabajo.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
             </div>
 
+            <div class="form-group">
+                <label for="{{ form.detalle.id_for_label }}">{{ form.detalle.label }}</label>
+                {{ form.detalle }}
+                {% for error in form.detalle.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+            </div>
+
             <div class="form-actions">
-                <a href="{% url 'taller:dashboard' %}" class="btn btn-outline">Cancelar</a>
-                <button type="submit" class="btn btn-primary">Guardar gasto</button>
+                <a href="{% url 'taller:pago_create' %}?mes={{ mes_actual_valor }}" class="btn btn-outline">Cancelar</a>
+                <button type="submit" class="btn btn-primary">{% if form.instance.pk %}Guardar cambios{% else %}Guardar pago{% endif %}</button>
             </div>
         </form>
     </div>
 
     <div class="panel-card gasto-history-card">
         <div class="page-header-row gasto-history-header">
-            <h2 class="panel-title">Historial de gastos</h2>
+            <h2 class="panel-title">Historial de pagos</h2>
             <div class="month-nav">
                 <a href="?mes={{ mes_anterior_valor }}" class="month-nav-btn" aria-label="Mes anterior">&lsaquo;</a>
                 <span class="month-nav-label">{{ mes_fecha|date:"F Y"|capfirst }}</span>
@@ -72,17 +66,25 @@
             </div>
         </div>
 
-        {% if gastos_mes %}
+        {% if pagos_mes %}
             <div class="gasto-history-list">
-                {% for gasto in gastos_mes %}
-                    <div class="gasto-history-row">
-                        <span class="gasto-history-desc">{{ gasto.descripcion }}</span>
-                        <span class="gasto-history-monto">{{ gasto.monto|moneda }}</span>
+                {% for pago in pagos_mes %}
+                    <div class="gasto-history-row{% if pago.pk == form.instance.pk %} gasto-history-row-activa{% endif %}" id="pago-{{ pago.pk }}">
+                        <div>
+                            <span class="gasto-history-desc">{{ pago.trabajo.cliente.nombre }}</span>
+                            <div class="row-subtitle">{{ pago.get_forma_pago_display }} · {{ pago.fecha|date:"d/m" }}</div>
+                        </div>
+                        <div class="row-actions">
+                            <span class="gasto-history-monto">{{ pago.monto|moneda }}</span>
+                            <a href="{% url 'taller:pago_edit' pago.pk %}?mes={{ mes_actual_valor }}" class="icon-btn" aria-label="Editar pago" title="Editar">
+                                {% nav_icon 'edit' %}
+                            </a>
+                        </div>
                     </div>
                 {% endfor %}
             </div>
         {% else %}
-            <div class="empty-state gasto-history-empty">Sin gastos este mes.</div>
+            <div class="empty-state gasto-history-empty">Sin pagos este mes.</div>
         {% endif %}
 
         <div class="gasto-history-total">

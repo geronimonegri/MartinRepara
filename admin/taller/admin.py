@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Cliente, Gasto, Trabajo
+from .models import Cliente, Gasto, Pago, Trabajo
 
 
 @admin.register(Cliente)
@@ -13,13 +13,14 @@ class ClienteAdmin(admin.ModelAdmin):
 class TrabajoAdmin(admin.ModelAdmin):
     list_display = (
         'cliente',
-        'dispositivo_tipo',
+        'categoria_dispositivo',
+        'subtipo_dispositivo',
         'estado',
         'precio_acordado',
         'fecha_ingreso',
         'fecha_entrega',
     )
-    list_filter = ('dispositivo_tipo', 'estado', 'fecha_ingreso')
+    list_filter = ('categoria_dispositivo', 'estado', 'fecha_ingreso')
     search_fields = (
         'cliente__nombre',
         'cliente__telefono',
@@ -34,4 +35,12 @@ class GastoAdmin(admin.ModelAdmin):
     list_display = ('descripcion', 'categoria', 'monto', 'fecha')
     list_filter = ('categoria', 'fecha')
     search_fields = ('descripcion',)
+    date_hierarchy = 'fecha'
+
+
+@admin.register(Pago)
+class PagoAdmin(admin.ModelAdmin):
+    list_display = ('trabajo', 'monto', 'forma_pago', 'fecha')
+    list_filter = ('forma_pago', 'fecha')
+    search_fields = ('trabajo__cliente__nombre', 'detalle')
     date_hierarchy = 'fecha'

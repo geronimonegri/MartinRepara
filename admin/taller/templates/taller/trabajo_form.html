@@ -1,10 +1,10 @@
 {% extends 'taller/base.html' %}
 {% load taller_extras %}
 
-{% block title %}Nuevo trabajo · Gestión Taller{% endblock %}
+{% block title %}{% if form.instance.pk %}Editar trabajo{% else %}Nuevo trabajo{% endif %} · Gestión Taller{% endblock %}
 
 {% block content %}
-<h1 class="page-title">Nuevo trabajo</h1>
+<h1 class="page-title">{% if form.instance.pk %}Editar trabajo{% else %}Nuevo trabajo{% endif %}</h1>
 
 <div class="form-card">
     <form method="post" novalidate>
@@ -24,18 +24,41 @@
         </div>
 
         <div class="form-group">
-            <label>{{ form.dispositivo_tipo.label }}</label>
+            <label>{{ form.categoria_dispositivo.label }}</label>
             <div class="option-grid device-grid">
-                {% for value, label in form.fields.dispositivo_tipo.choices %}
+                {% for value, label in form.fields.categoria_dispositivo.choices %}
                     <label class="device-option">
-                        <input type="radio" name="dispositivo_tipo" value="{{ value }}" class="hidden-radio"
-                               {% if form.dispositivo_tipo.value == value %}checked{% endif %}>
+                        <input type="radio" name="categoria_dispositivo" value="{{ value }}" class="hidden-radio categoria-dispositivo-radio"
+                               {% if form.categoria_dispositivo.value == value %}checked{% endif %}>
                         {% device_icon value %}
                         <span>{{ label }}</span>
                     </label>
                 {% endfor %}
             </div>
-            {% for error in form.dispositivo_tipo.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+            {% for error in form.categoria_dispositivo.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+        </div>
+
+        <div class="form-group" id="subtipo-dispositivo-group">
+            <label>{{ form.subtipo_dispositivo.label }}</label>
+            <div class="option-grid category-grid subtipo-options" data-categoria="celular">
+                {% for value, label in form.subtipos_celular %}
+                    <label class="category-option">
+                        <input type="radio" name="subtipo_dispositivo" value="{{ value }}" class="hidden-radio"
+                               {% if form.subtipo_dispositivo.value == value %}checked{% endif %}>
+                        <span>{{ label }}</span>
+                    </label>
+                {% endfor %}
+            </div>
+            <div class="option-grid category-grid subtipo-options" data-categoria="consola">
+                {% for value, label in form.subtipos_consola %}
+                    <label class="category-option">
+                        <input type="radio" name="subtipo_dispositivo" value="{{ value }}" class="hidden-radio"
+                               {% if form.subtipo_dispositivo.value == value %}checked{% endif %}>
+                        <span>{{ label }}</span>
+                    </label>
+                {% endfor %}
+            </div>
+            {% for error in form.subtipo_dispositivo.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
         </div>
 
         <div class="form-group">
@@ -59,8 +82,41 @@
 
         <div class="form-actions">
             <a href="{% url 'taller:trabajos_list' %}" class="btn btn-outline">Cancelar</a>
-            <button type="submit" class="btn btn-primary">Guardar trabajo</button>
+            <button type="submit" class="btn btn-primary">{% if form.instance.pk %}Guardar cambios{% else %}Guardar trabajo{% endif %}</button>
         </div>
     </form>
 </div>
+
+<script>
+(function () {
+    var categoriaRadios = document.querySelectorAll('.categoria-dispositivo-radio');
+    var subtipoGroup = document.getElementById('subtipo-dispositivo-group');
+    var subtipoOptionGroups = document.querySelectorAll('.subtipo-options');
+
+    if (!categoriaRadios.length || !subtipoGroup) { return; }
+
+    function actualizarSubtipo() {
+        var seleccionado = document.querySelector('.categoria-dispositivo-radio:checked');
+        var categoria = seleccionado ? seleccionado.value : null;
+        var aplica = categoria === 'celular' || categoria === 'consola';
+
+        subtipoGroup.style.display = aplica ? '' : 'none';
+
+        subtipoOptionGroups.forEach(function (grupo) {
+            var esDeEstaCategoria = grupo.getAttribute('data-categoria') === categoria;
+            grupo.style.display = esDeEstaCategoria ? '' : 'none';
+            if (!esDeEstaCategoria) {
+                grupo.querySelectorAll('input[type="radio"]').forEach(function (input) {
+                    input.checked = false;
+                });
+            }
+        });
+    }
+
+    categoriaRadios.forEach(function (radio) {
+        radio.addEventListener('change', actualizarSubtipo);
+    });
+    actualizarSubtipo();
+})();
+</script>
 {% endblock %}

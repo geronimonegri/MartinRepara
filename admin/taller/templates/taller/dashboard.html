@@ -13,7 +13,7 @@
             {% for trabajo in pendientes %}
                 <div class="list-row">
                     <div class="list-row-main">
-                        <div class="row-icon">{% device_icon trabajo.dispositivo_tipo %}</div>
+                        <div class="row-icon">{% device_icon trabajo.categoria_dispositivo %}</div>
                         <div>
                             <div class="row-title">{{ trabajo.cliente.nombre }}</div>
                             <div class="row-subtitle">{{ trabajo.descripcion_problema }}</div>

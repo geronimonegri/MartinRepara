@@ -20,6 +20,8 @@
     --mint-text: #047857;
     --gray-bg: #e5e7eb;
     --gray-text: #374151;
+    --purple: #8b5cf6;
+    --green-light: #86efac;
 }
 
 * { box-sizing: border-box; }
@@ -122,6 +124,8 @@ a { text-decoration: none; color: inherit; }
 .btn-sm { padding: 6px 12px; font-size: 0.78rem; white-space: nowrap; }
 
 .pago-info { font-size: 0.82rem; font-weight: 600; color: var(--mint-text); white-space: nowrap; }
+
+.pago-parcial { font-size: 0.82rem; font-weight: 600; color: var(--amber-text); white-space: nowrap; }
 
 /* ---------- Dashboard ---------- */
 
@@ -258,6 +262,29 @@ a { text-decoration: none; color: inherit; }
 
 .estado-form { display: inline-block; }
 
+.row-actions { display: flex; align-items: center; gap: 4px; }
+
+.icon-form { display: inline-flex; }
+
+.icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    border: none;
+    background: transparent;
+    color: #64748b;
+    cursor: pointer;
+}
+
+.icon-btn svg { width: 16px; height: 16px; }
+
+.icon-btn:hover { background: #f1f5f9; color: var(--text-main); }
+
+.icon-btn-danger:hover { background: #fee2e2; color: var(--red); }
+
 .estado-select {
     appearance: none;
     -webkit-appearance: none;
@@ -282,13 +309,38 @@ a { text-decoration: none; color: inherit; }
 
 .balance-header { align-items: center; margin-bottom: 20px; }
 
-.month-input {
-    border: 1.5px solid var(--border);
-    border-radius: 8px;
-    padding: 9px 14px;
-    font-size: 0.88rem;
+.month-nav {
+    display: flex;
+    align-items: center;
+    gap: 4px;
     background: #fff;
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    padding: 6px 8px;
+}
+
+.month-nav-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    font-size: 1.1rem;
+    line-height: 1;
+    color: #64748b;
+    font-weight: 600;
+}
+
+.month-nav-btn:hover { background: #f1f5f9; color: var(--text-main); }
+
+.month-nav-label {
+    font-size: 0.9rem;
+    font-weight: 700;
     color: var(--text-main);
+    padding: 0 10px;
+    min-width: 120px;
+    text-align: center;
 }
 
 .balance-card {
@@ -348,7 +400,7 @@ a { text-decoration: none; color: inherit; }
 
 .stat-subtitle { font-size: 0.8rem; color: var(--text-muted); margin-top: 4px; }
 
-.bottom-row { display: flex; gap: 20px; align-items: flex-start; }
+.charts-row { display: flex; gap: 20px; align-items: stretch; margin-bottom: 20px; }
 
 .panel-card {
     flex: 1;
@@ -356,36 +408,60 @@ a { text-decoration: none; color: inherit; }
     border-radius: 14px;
     padding: 22px 24px;
     box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    margin-bottom: 20px;
 }
+
+.charts-row .panel-card { margin-bottom: 0; }
 
 .panel-title { font-size: 0.95rem; font-weight: 600; margin: 0 0 16px; }
 
-.category-bar-row { margin-bottom: 16px; }
-.category-bar-row:last-child { margin-bottom: 0; }
+.chart-wrap { height: 220px; position: relative; }
 
-.category-bar-header {
-    display: flex;
-    justify-content: space-between;
-    font-size: 0.85rem;
-    font-weight: 600;
-    color: var(--text-main);
-    margin-bottom: 6px;
+.donut-row { display: flex; align-items: center; gap: 28px; }
+
+.donut-wrap {
+    position: relative;
+    width: 160px;
+    height: 160px;
+    flex-shrink: 0;
 }
 
-.category-bar-track {
-    height: 8px;
-    background: #f1f5f9;
-    border-radius: 999px;
-    overflow: hidden;
+.donut-center {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    pointer-events: none;
 }
 
-.category-bar-fill { height: 100%; border-radius: 999px; }
+.donut-center-label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #94a3b8;
+}
 
-.category-repuesto { background: var(--blue); }
-.category-herramienta { background: #f59e0b; }
-.category-otro { background: #9ca3af; }
+.donut-center-value { font-size: 1.15rem; font-weight: 800; color: var(--text-main); margin-top: 2px; }
 
-.estado-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.category-legend { flex: 1; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+.legend-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+
+.legend-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+.legend-label { font-size: 0.87rem; font-weight: 600; color: var(--text-main); }
+
+.legend-right { text-align: right; flex-shrink: 0; }
+
+.legend-amount { font-size: 0.87rem; font-weight: 700; color: var(--text-main); }
+
+.legend-pct { font-size: 0.76rem; color: var(--text-muted); margin-top: 1px; }
+
+.estado-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
 
 .estado-card { border-radius: 12px; padding: 16px 18px; }
 
@@ -496,3 +572,58 @@ textarea.form-control { resize: vertical; min-height: 90px; }
 }
 
 .form-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 8px; }
+
+/* ---------- Gastos (form + historial) ---------- */
+
+.gasto-page-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 24px;
+    align-items: start;
+}
+
+.gasto-page-grid .form-card { margin: 0; max-width: 480px; width: 100%; }
+
+.gasto-history-card { margin: 0; max-width: 420px; width: 100%; }
+
+.gasto-history-header { align-items: center; margin-bottom: 18px; }
+
+.gasto-history-header .panel-title { margin: 0; }
+
+.gasto-history-list { display: flex; flex-direction: column; }
+
+.gasto-history-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.gasto-history-row:last-child { border-bottom: none; }
+
+.gasto-history-row-activa,
+.gasto-history-row:target { background: var(--blue-light); border-radius: 8px; padding-left: 10px; padding-right: 10px; margin: 0 -10px; }
+
+.gasto-history-desc { font-size: 0.87rem; color: var(--text-main); min-width: 0; }
+
+.gasto-history-monto { font-size: 0.87rem; font-weight: 700; color: var(--text-main); white-space: nowrap; }
+
+.gasto-history-empty {
+    background: var(--bg);
+    border-radius: 10px;
+    padding: 28px 16px;
+}
+
+.gasto-history-total {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--text-main);
+}

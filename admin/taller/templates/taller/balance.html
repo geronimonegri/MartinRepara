@@ -5,13 +5,12 @@
 
 {% block content %}
 <div class="page-header-row balance-header">
-    <div>
-        <h1 class="page-title">Balance</h1>
-        <div class="page-subtitle">{{ mes_fecha|date:"F Y"|capfirst }}</div>
+    <h1 class="page-title">Balance</h1>
+    <div class="month-nav">
+        <a href="?mes={{ mes_anterior_valor }}" class="month-nav-btn" aria-label="Mes anterior">&lsaquo;</a>
+        <span class="month-nav-label">{{ mes_fecha|date:"F Y"|capfirst }}</span>
+        <a href="?mes={{ mes_siguiente_valor }}" class="month-nav-btn" aria-label="Mes siguiente">&rsaquo;</a>
     </div>
-    <form method="get" class="month-form">
-        <input type="month" name="mes" value="{{ mes_input_value }}" class="month-input" onchange="this.form.submit()">
-    </form>
 </div>
 
 <div class="balance-card {% if balance_total >= 0 %}balance-positive{% else %}balance-negative{% endif %}">
@@ -23,52 +22,194 @@
     {% endif %}
     <div class="balance-label">Balance del mes</div>
     <div class="balance-amount">{{ balance_total|moneda }}</div>
-    <div class="balance-detail">Ingresos {{ ingresos|moneda }} · Gastos {{ gastos|moneda }}</div>
 </div>
 
 <div class="stat-row">
+    <div class="stat-card">
+        <div class="stat-label">Ingresos</div>
+        <div class="stat-value">{{ ingresos|moneda }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Gastos</div>
+        <div class="stat-value">{{ gastos|moneda }}</div>
+    </div>
     {% if es_mes_actual %}
         <div class="stat-card">
             <div class="stat-label">Ingresos pendientes</div>
             <div class="stat-value">{{ ingresos_pendientes|moneda }}</div>
-            <div class="stat-subtitle">{{ trabajos_listos_count }} trabajo(s) listos, sin entregar</div>
+            <div class="stat-subtitle">{{ trabajos_listos_count }} listo(s) sin entregar</div>
         </div>
     {% endif %}
     <div class="stat-card">
         <div class="stat-label">Ticket promedio</div>
         <div class="stat-value">{{ ticket_promedio|moneda }}</div>
-        <div class="stat-subtitle">{{ entregados_mes_count }} trabajo(s) entregados este mes</div>
+        <div class="stat-subtitle">{{ entregados_mes_count }} entregado(s)</div>
     </div>
 </div>
 
-<div class="bottom-row">
+<div class="panel-card">
+    <h2 class="panel-title">Evolución del balance (6 meses)</h2>
+    <div class="chart-wrap">
+        <canvas id="evolutionChart"></canvas>
+    </div>
+</div>
+
+<div class="charts-row">
     <div class="panel-card">
         <h2 class="panel-title">Gastos por categoría</h2>
-        {% for categoria in categorias %}
-            <div class="category-bar-row">
-                <div class="category-bar-header">
-                    <span>{{ categoria.label }}</span>
-                    <span>{{ categoria.total|moneda }}</span>
-                </div>
-                <div class="category-bar-track">
-                    <div class="category-bar-fill category-{{ categoria.categoria }}" style="width: {{ categoria.pct }}%;"></div>
+        <div class="donut-row">
+            <div class="donut-wrap">
+                <canvas id="categoriaChart"></canvas>
+                <div class="donut-center">
+                    <div class="donut-center-label">Total</div>
+                    <div class="donut-center-value">{{ gastos|moneda }}</div>
                 </div>
             </div>
-        {% empty %}
-            <div class="empty-state">No hay gastos cargados este mes.</div>
-        {% endfor %}
+            <div class="category-legend">
+                {% for c in categorias %}
+                    <div class="legend-row">
+                        <div class="legend-left">
+                            <span class="legend-dot" style="background:{{ c.color }};"></span>
+                            <span class="legend-label">{{ c.label }}</span>
+                        </div>
+                        <div class="legend-right">
+                            <div class="legend-amount">{{ c.total|moneda }}</div>
+                            <div class="legend-pct">{{ c.pct }}%</div>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
     </div>
 
     <div class="panel-card">
-        <h2 class="panel-title">Trabajos por estado</h2>
-        <div class="estado-grid">
-            {% for estado in estados_grid %}
-                <div class="estado-card estado-card-{{ estado.value }}">
-                    <div class="estado-card-number">{{ estado.cantidad }}</div>
-                    <div class="estado-card-label">{{ estado.label }}</div>
+        <h2 class="panel-title">Pagos por categoría de dispositivo</h2>
+        <div class="donut-row">
+            <div class="donut-wrap">
+                <canvas id="dispositivoChart"></canvas>
+                <div class="donut-center">
+                    <div class="donut-center-label">Total</div>
+                    <div class="donut-center-value">{{ ingresos|moneda }}</div>
                 </div>
-            {% endfor %}
+            </div>
+            <div class="category-legend">
+                {% for c in categorias_dispositivo %}
+                    <div class="legend-row">
+                        <div class="legend-left">
+                            <span class="legend-dot" style="background:{{ c.color }};"></span>
+                            <span class="legend-label">{{ c.label }}</span>
+                        </div>
+                        <div class="legend-right">
+                            <div class="legend-amount">{{ c.total|moneda }}</div>
+                            <div class="legend-pct">{{ c.pct }}%</div>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
         </div>
     </div>
 </div>
+
+<div class="panel-card">
+    <h2 class="panel-title">Trabajos por estado</h2>
+    <div class="estado-grid">
+        {% for estado in estados_grid %}
+            <div class="estado-card estado-card-{{ estado.value }}">
+                <div class="estado-card-number">{{ estado.cantidad }}</div>
+                <div class="estado-card-label">{{ estado.label }}</div>
+            </div>
+        {% endfor %}
+    </div>
+</div>
+
+{{ evolucion_labels|json_script:"evolucion-labels" }}
+{{ evolucion_valores|json_script:"evolucion-valores" }}
+{{ categorias_json|json_script:"categorias-data" }}
+{{ categorias_dispositivo_json|json_script:"categorias-dispositivo-data" }}
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+    if (typeof Chart === 'undefined') { return; }
+
+    var labels = JSON.parse(document.getElementById('evolucion-labels').textContent);
+    var valores = JSON.parse(document.getElementById('evolucion-valores').textContent);
+    var indiceActual = {{ evolucion_indice_actual }};
+
+    var colores = labels.map(function (_, i) {
+        return i === indiceActual ? '#16a34a' : '#86efac';
+    });
+
+    var evoCanvas = document.getElementById('evolutionChart');
+    if (evoCanvas) {
+        new Chart(evoCanvas, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: valores,
+                    backgroundColor: colores,
+                    borderRadius: 4,
+                    maxBarThickness: 44,
+                }],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function (ctx) {
+                                return '$' + Math.round(ctx.parsed.y).toLocaleString('es-AR');
+                            },
+                        },
+                    },
+                },
+                scales: {
+                    y: { display: false },
+                    x: { grid: { display: false }, ticks: { color: '#64748b', font: { size: 12 } } },
+                },
+            },
+        });
+    }
+
+    function crearDonut(canvasId, datos) {
+        var canvas = document.getElementById(canvasId);
+        if (!canvas) { return; }
+        new Chart(canvas, {
+            type: 'doughnut',
+            data: {
+                labels: datos.map(function (c) { return c.label; }),
+                datasets: [{
+                    data: datos.map(function (c) { return c.total; }),
+                    backgroundColor: datos.map(function (c) { return c.color; }),
+                    borderWidth: 0,
+                }],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '72%',
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function (ctx) {
+                                return ctx.label + ': $' + Math.round(ctx.parsed).toLocaleString('es-AR');
+                            },
+                        },
+                    },
+                },
+            },
+        });
+    }
+
+    var categorias = JSON.parse(document.getElementById('categorias-data').textContent);
+    crearDonut('categoriaChart', categorias);
+
+    var categoriasDispositivo = JSON.parse(document.getElementById('categorias-dispositivo-data').textContent);
+    crearDonut('dispositivoChart', categoriasDispositivo);
+})();
+</script>
 {% endblock %}

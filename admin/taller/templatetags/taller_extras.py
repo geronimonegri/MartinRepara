@@ -15,7 +15,7 @@ _DEVICE_ICONS = {
         + '<rect x="6" y="2" width="12" height="20" rx="2"/>'
         + '<line x1="12" y1="18" x2="12.01" y2="18"/></svg>'
     ),
-    'joystick': (
+    'consola': (
         _SVG_OPEN
         + '<rect x="2" y="7" width="20" height="11" rx="5.5"/>'
         + '<line x1="7" y1="12" x2="11" y2="12"/>'
@@ -23,15 +23,16 @@ _DEVICE_ICONS = {
         + '<circle cx="16" cy="10.5" r="0.9" fill="currentColor"/>'
         + '<circle cx="18" cy="13" r="0.9" fill="currentColor"/></svg>'
     ),
-    'ps4': (
-        _SVG_OPEN
-        + '<circle cx="12" cy="12" r="9"/>'
-        + '<circle cx="12" cy="12" r="3"/></svg>'
-    ),
     'notebook': (
         _SVG_OPEN
         + '<rect x="3" y="4" width="18" height="12" rx="2"/>'
         + '<line x1="2" y1="20" x2="22" y2="20"/></svg>'
+    ),
+    'otro': (
+        _SVG_OPEN
+        + '<circle cx="12" cy="12" r="9"/>'
+        + '<path d="M9.5 9a2.5 2.5 0 0 1 4.9.8c0 1.7-2.4 2.2-2.4 2.2"/>'
+        + '<line x1="12" y1="16.5" x2="12.01" y2="16.5"/></svg>'
     ),
 }
 
@@ -75,6 +76,23 @@ _NAV_ICONS = {
         _SVG_OPEN
         + '<line x1="12" y1="5" x2="12" y2="19"/>'
         + '<line x1="5" y1="12" x2="19" y2="12"/></svg>'
+    ),
+    'edit': (
+        _SVG_OPEN
+        + '<path d="M12 20h9"/>'
+        + '<path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>'
+    ),
+    'dollar-sign': (
+        _SVG_OPEN
+        + '<line x1="12" y1="1" x2="12" y2="23"/>'
+        + '<path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>'
+    ),
+    'trash': (
+        _SVG_OPEN
+        + '<polyline points="3 6 5 6 21 6"/>'
+        + '<path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>'
+        + '<line x1="10" y1="11" x2="10" y2="17"/>'
+        + '<line x1="14" y1="11" x2="14" y2="17"/></svg>'
     ),
 }
 
