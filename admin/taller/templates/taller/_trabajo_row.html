@@ -1,0 +1,48 @@
+{% load taller_extras %}
+<tr data-cliente="{{ trabajo.cliente.nombre|lower }}">
+    <td>
+        <div class="row-title">{{ trabajo.cliente.nombre }}</div>
+        <div class="row-subtitle">{{ trabajo.cliente.telefono }}</div>
+    </td>
+    <td>
+        <div class="device-cell">
+            {% device_icon trabajo.categoria_dispositivo %}
+            <span>{{ trabajo.get_categoria_dispositivo_display }}{% if trabajo.subtipo_dispositivo %} · {{ trabajo.get_subtipo_dispositivo_display }}{% endif %}</span>
+        </div>
+    </td>
+    <td class="problema-cell">{{ trabajo.descripcion_problema }}</td>
+    <td>
+        <form method="post" action="{% url 'taller:trabajo_estado_update' trabajo.pk %}" class="estado-form">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+            <select name="estado" class="estado-select estado-{{ trabajo.estado }}" onchange="this.form.submit()">
+                {% for value, label in estados %}
+                    <option value="{{ value }}" {% if trabajo.estado == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </form>
+        {% if trabajo.esta_pagado_calc %}
+            <a href="{% url 'taller:pago_create' %}?trabajo={{ trabajo.pk }}" class="pago-info">Pagado por completo</a>
+        {% elif trabajo.total_pagado_calc > 0 and trabajo.precio_acordado %}
+            <a href="{% url 'taller:pago_create' %}?trabajo={{ trabajo.pk }}" class="pago-parcial">Pago parcial: {{ trabajo.total_pagado_calc|moneda }} de {{ trabajo.precio_acordado|moneda }}</a>
+        {% elif trabajo.total_pagado_calc > 0 %}
+            <a href="{% url 'taller:pago_create' %}?trabajo={{ trabajo.pk }}" class="pago-parcial">Pago parcial: {{ trabajo.total_pagado_calc|moneda }}</a>
+        {% endif %}
+    </td>
+    <td>{{ trabajo.precio_acordado|moneda }}</td>
+    <td>{{ trabajo.fecha_ingreso|date:"d/m/Y" }}</td>
+    <td>{{ trabajo.fecha_entrega|date:"d/m/Y"|default:"—" }}</td>
+    <td>
+        <div class="row-actions">
+            <a href="{% url 'taller:trabajo_edit' trabajo.pk %}" class="icon-btn" aria-label="Editar trabajo" title="Editar">
+                {% nav_icon 'edit' %}
+            </a>
+            <form method="post" action="{% url 'taller:trabajo_delete' trabajo.pk %}" class="icon-form trabajo-delete-form" data-cliente="{{ trabajo.cliente.nombre }}">
+                {% csrf_token %}
+                <button type="submit" class="icon-btn icon-btn-danger" aria-label="Eliminar trabajo" title="Eliminar">
+                    {% nav_icon 'trash' %}
+                </button>
+            </form>
+        </div>
+    </td>
+</tr>

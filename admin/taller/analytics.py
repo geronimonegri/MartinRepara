@@ -6,7 +6,7 @@ que una vista los formatee. No hay lógica de presentación acá.
 
 from decimal import Decimal
 
-from django.db.models import Avg, Count, Sum
+from django.db.models import Sum
 
 from .models import Gasto, Pago, Trabajo
 
@@ -77,14 +77,6 @@ def ingresos_pendientes():
     return total or Decimal('0')
 
 
-def ticket_promedio(anio, mes):
-    """Precio promedio de los trabajos entregados en el mes/año dado."""
-    promedio = Trabajo.objects.filter(
-        fecha_entrega__year=anio, fecha_entrega__month=mes
-    ).aggregate(promedio=Avg('precio_acordado'))['promedio']
-    return promedio or Decimal('0')
-
-
 def balance_ultimos_n_meses(anio, mes, n=6):
     """Balance mensual de los últimos `n` meses, terminando en anio/mes (inclusive).
 
@@ -102,12 +94,3 @@ def balance_ultimos_n_meses(anio, mes, n=6):
         {'anio': a, 'mes': m, 'balance': balance_mensual(a, m)}
         for a, m in periodos
     ]
-
-
-def trabajos_por_estado():
-    """Cantidad de trabajos agrupados por estado, sin filtro de fecha."""
-    return (
-        Trabajo.objects.values('estado')
-        .annotate(cantidad=Count('id'))
-        .order_by('estado')
-    )

@@ -9,7 +9,11 @@
     <div class="month-nav">
         <a href="?mes={{ mes_anterior_valor }}" class="month-nav-btn" aria-label="Mes anterior">&lsaquo;</a>
         <span class="month-nav-label">{{ mes_fecha|date:"F Y"|capfirst }}</span>
-        <a href="?mes={{ mes_siguiente_valor }}" class="month-nav-btn" aria-label="Mes siguiente">&rsaquo;</a>
+        {% if puede_avanzar %}
+            <a href="?mes={{ mes_siguiente_valor }}" class="month-nav-btn" aria-label="Mes siguiente">&rsaquo;</a>
+        {% else %}
+            <span class="month-nav-btn month-nav-btn-disabled" aria-disabled="true">&rsaquo;</span>
+        {% endif %}
     </div>
 </div>
 
@@ -33,17 +37,14 @@
         <div class="stat-label">Gastos</div>
         <div class="stat-value">{{ gastos|moneda }}</div>
     </div>
-    {% if es_mes_actual %}
-        <div class="stat-card">
-            <div class="stat-label">Ingresos pendientes</div>
-            <div class="stat-value">{{ ingresos_pendientes|moneda }}</div>
-            <div class="stat-subtitle">{{ trabajos_listos_count }} listo(s) sin entregar</div>
-        </div>
-    {% endif %}
     <div class="stat-card">
-        <div class="stat-label">Ticket promedio</div>
-        <div class="stat-value">{{ ticket_promedio|moneda }}</div>
-        <div class="stat-subtitle">{{ entregados_mes_count }} entregado(s)</div>
+        <div class="stat-label">Ingresos pendientes</div>
+        <div class="stat-value">{{ ingresos_pendientes|moneda }}</div>
+        {% if es_mes_actual %}
+            <div class="stat-subtitle">{{ trabajos_listos_count }} listo(s) sin entregar</div>
+        {% else %}
+            <div class="stat-subtitle">al día de hoy</div>
+        {% endif %}
     </div>
 </div>
 
@@ -83,7 +84,7 @@
     </div>
 
     <div class="panel-card">
-        <h2 class="panel-title">Pagos por categoría de dispositivo</h2>
+        <h2 class="panel-title">Ingresos por dispositivo</h2>
         <div class="donut-row">
             <div class="donut-wrap">
                 <canvas id="dispositivoChart"></canvas>
@@ -110,18 +111,6 @@
     </div>
 </div>
 
-<div class="panel-card">
-    <h2 class="panel-title">Trabajos por estado</h2>
-    <div class="estado-grid">
-        {% for estado in estados_grid %}
-            <div class="estado-card estado-card-{{ estado.value }}">
-                <div class="estado-card-number">{{ estado.cantidad }}</div>
-                <div class="estado-card-label">{{ estado.label }}</div>
-            </div>
-        {% endfor %}
-    </div>
-</div>
-
 {{ evolucion_labels|json_script:"evolucion-labels" }}
 {{ evolucion_valores|json_script:"evolucion-valores" }}
 {{ categorias_json|json_script:"categorias-data" }}
@@ -136,8 +125,12 @@
     var valores = JSON.parse(document.getElementById('evolucion-valores').textContent);
     var indiceActual = {{ evolucion_indice_actual }};
 
-    var colores = labels.map(function (_, i) {
-        return i === indiceActual ? '#16a34a' : '#86efac';
+    var colores = valores.map(function (valor, i) {
+        var esActual = i === indiceActual;
+        if (valor < 0) {
+            return esActual ? '#b42318' : '#e3a49c';
+        }
+        return esActual ? '#0f9d58' : '#9bcfb4';
     });
 
     var evoCanvas = document.getElementById('evolutionChart');

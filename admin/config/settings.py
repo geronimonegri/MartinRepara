@@ -12,6 +12,8 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 from pathlib import Path
 
+from decouple import Csv, config
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -19,13 +21,21 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-e8r*#!6ld!7-&th8bfr#^6rrn@(g+p-v6aq@8e!)^fv#&&ry1q'
+# Todas las variables tienen un default que funciona en desarrollo local
+# sin crear un .env. Para producción, completar admin/.env (ver .env.example).
+SECRET_KEY = config(
+    'SECRET_KEY',
+    default='django-insecure-e8r*#!6ld!7-&th8bfr#^6rrn@(g+p-v6aq@8e!)^fv#&&ry1q',
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = config('DEBUG', default=True, cast=bool)
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='', cast=Csv())
+
+# True cuando corre como app de escritorio (la fija app.py antes de
+# levantar Django). En manage.py runserver normal queda en False.
+MODO_ESCRITORIO = config('MODO_ESCRITORIO', default=False, cast=bool)
 
 
 # Application definition
@@ -42,6 +52,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -62,6 +73,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'taller.context_processors.escritorio',
             ],
         },
     },
@@ -76,7 +88,11 @@ WSGI_APPLICATION = 'config.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        # La app de escritorio (app.py) fija DB_PATH a
+        # %APPDATA%\MartinRepara\db.sqlite3 antes de levantar Django, para
+        # que la base no quede adentro del .exe. En desarrollo normal
+        # (manage.py) no hay DB_PATH seteada y se usa el default de siempre.
+        'NAME': config('DB_PATH', default=str(BASE_DIR / 'db.sqlite3')),
     }
 }
 
@@ -103,7 +119,7 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/6.0/topics/i18n/
 
-LANGUAGE_CODE = 'es-ar'
+LANGUAGE_CODE = 'es'
 
 TIME_ZONE = 'America/Argentina/Buenos_Aires'
 
@@ -116,3 +132,22 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+STORAGES = {
+    'staticfiles': {
+        # Sin manifest: no requiere correr collectstatic para que
+        # {% static %} funcione en desarrollo (evita romper el
+        # entorno local si DEBUG=False y todavía no se corrió
+        # collectstatic).
+        'BACKEND': 'whitenoise.storage.CompressedStaticFilesStorage',
+    },
+}
+
+
+# Autenticación
+# https://docs.djangoproject.com/en/6.0/topics/auth/default/
+
+LOGIN_URL = 'login'
+LOGIN_REDIRECT_URL = 'taller:dashboard'
+LOGOUT_REDIRECT_URL = 'login'

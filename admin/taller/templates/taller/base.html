@@ -11,25 +11,20 @@
     <div class="app-shell">
         <aside class="sidebar">
             <div class="sidebar-brand">
-                <div class="sidebar-title">Gestión Taller</div>
-                <div class="sidebar-subtitle">Reparaciones</div>
+                <img src="{% static 'taller/img/logo.jpeg' %}" alt="Martín repara." class="sidebar-logo">
             </div>
             <nav class="sidebar-nav">
                 <a href="{% url 'taller:dashboard' %}" class="nav-item {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
                     {% nav_icon 'dashboard' %}
                     <span>Dashboard</span>
                 </a>
-                <a href="{% url 'taller:trabajos_list' %}" class="nav-item {% if request.resolver_match.url_name == 'trabajos_list' %}active{% endif %}">
+                <a href="{% url 'taller:trabajos_list' %}" class="nav-item {% if request.resolver_match.url_name == 'trabajos_list' or request.resolver_match.url_name == 'trabajo_create' or request.resolver_match.url_name == 'trabajo_edit' %}active{% endif %}">
                     {% nav_icon 'list' %}
                     <span>Trabajos</span>
                 </a>
                 <a href="{% url 'taller:balance' %}" class="nav-item {% if request.resolver_match.url_name == 'balance' %}active{% endif %}">
                     {% nav_icon 'bar-chart' %}
                     <span>Balance</span>
-                </a>
-                <a href="{% url 'taller:trabajo_create' %}" class="nav-item {% if request.resolver_match.url_name == 'trabajo_create' %}active{% endif %}">
-                    {% nav_icon 'wrench' %}
-                    <span>Nuevo trabajo</span>
                 </a>
                 <a href="{% url 'taller:gasto_create' %}" class="nav-item {% if request.resolver_match.url_name == 'gasto_create' %}active{% endif %}">
                     {% nav_icon 'file-text' %}
@@ -40,10 +35,53 @@
                     <span>Pagos</span>
                 </a>
             </nav>
+            <div class="sidebar-footer">
+                <form method="post" action="{% url 'taller:backup_exportar' %}">
+                    {% csrf_token %}
+                    <button type="submit" class="nav-item nav-item-logout">
+                        {% nav_icon 'backup' %}
+                        <span>Copia de seguridad</span>
+                    </button>
+                </form>
+                <form method="post" action="{% url 'taller:exportar_excel' %}">
+                    {% csrf_token %}
+                    <button type="submit" class="nav-item nav-item-logout">
+                        {% nav_icon 'table' %}
+                        <span>Exportar a Excel</span>
+                    </button>
+                </form>
+                {% if modo_escritorio %}
+                    <button type="button" id="cerrar-app-btn" class="nav-item nav-item-logout">
+                        {% nav_icon 'logout' %}
+                        <span>Salir</span>
+                    </button>
+                {% endif %}
+            </div>
         </aside>
         <main class="content">
+            {% if messages %}
+                <div class="messages">
+                    {% for message in messages %}
+                        <div class="message message-{{ message.tags }}">{{ message }}</div>
+                    {% endfor %}
+                </div>
+            {% endif %}
             {% block content %}{% endblock %}
         </main>
     </div>
+    {% if modo_escritorio %}
+        <script>
+        (function () {
+            var btn = document.getElementById('cerrar-app-btn');
+            if (!btn) { return; }
+            btn.addEventListener('click', function () {
+                if (!window.confirm('¿Cerrar Martín repara?')) { return; }
+                if (window.pywebview && window.pywebview.api && window.pywebview.api.cerrar_app) {
+                    window.pywebview.api.cerrar_app();
+                }
+            });
+        })();
+        </script>
+    {% endif %}
 </body>
 </html>

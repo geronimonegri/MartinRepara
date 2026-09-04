@@ -15,4 +15,6 @@ urlpatterns = [
     path('pagos/', views.pago_create, name='pago_create'),
     path('pagos/<int:pk>/editar/', views.pago_edit, name='pago_edit'),
     path('balance/', views.balance, name='balance'),
+    path('backup/exportar/', views.backup_exportar, name='backup_exportar'),
+    path('exportar/excel/', views.exportar_excel, name='exportar_excel'),
 ]

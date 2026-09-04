@@ -50,7 +50,7 @@
             </div>
 
             <div class="form-actions">
-                <a href="{% url 'taller:pago_create' %}?mes={{ mes_actual_valor }}" class="btn btn-outline">Cancelar</a>
+                <a href="{% url 'taller:pago_create' %}" class="btn btn-outline">Cancelar</a>
                 <button type="submit" class="btn btn-primary">{% if form.instance.pk %}Guardar cambios{% else %}Guardar pago{% endif %}</button>
             </div>
         </form>
@@ -59,24 +59,19 @@
     <div class="panel-card gasto-history-card">
         <div class="page-header-row gasto-history-header">
             <h2 class="panel-title">Historial de pagos</h2>
-            <div class="month-nav">
-                <a href="?mes={{ mes_anterior_valor }}" class="month-nav-btn" aria-label="Mes anterior">&lsaquo;</a>
-                <span class="month-nav-label">{{ mes_fecha|date:"F Y"|capfirst }}</span>
-                <a href="?mes={{ mes_siguiente_valor }}" class="month-nav-btn" aria-label="Mes siguiente">&rsaquo;</a>
-            </div>
         </div>
 
-        {% if pagos_mes %}
+        {% if pagos_historial %}
             <div class="gasto-history-list">
-                {% for pago in pagos_mes %}
-                    <div class="gasto-history-row{% if pago.pk == form.instance.pk %} gasto-history-row-activa{% endif %}" id="pago-{{ pago.pk }}">
+                {% for pago in pagos_historial %}
+                    <div class="gasto-history-row{% if trabajo_resaltado and pago.trabajo_id == trabajo_resaltado %} gasto-history-row-activa{% endif %}">
                         <div>
-                            <span class="gasto-history-desc">{{ pago.trabajo.cliente.nombre }}</span>
-                            <div class="row-subtitle">{{ pago.get_forma_pago_display }} · {{ pago.fecha|date:"d/m" }}</div>
+                            <span class="gasto-history-desc">Pago #{{ pago.pk }} · {{ pago.trabajo.cliente.nombre }}</span>
+                            <div class="row-subtitle">{{ pago.get_forma_pago_display }} · {{ pago.fecha|date:"d/m/Y" }}{% if pago.detalle %} · {{ pago.detalle }}{% endif %}</div>
                         </div>
                         <div class="row-actions">
                             <span class="gasto-history-monto">{{ pago.monto|moneda }}</span>
-                            <a href="{% url 'taller:pago_edit' pago.pk %}?mes={{ mes_actual_valor }}" class="icon-btn" aria-label="Editar pago" title="Editar">
+                            <a href="{% url 'taller:pago_edit' pago.pk %}" class="icon-btn" aria-label="Editar pago" title="Editar">
                                 {% nav_icon 'edit' %}
                             </a>
                         </div>
@@ -84,13 +79,8 @@
                 {% endfor %}
             </div>
         {% else %}
-            <div class="empty-state gasto-history-empty">Sin pagos este mes.</div>
+            <div class="empty-state gasto-history-empty">Todavía no hay pagos registrados.</div>
         {% endif %}
-
-        <div class="gasto-history-total">
-            <span>Total del mes</span>
-            <span>{{ total_mes|moneda }}</span>
-        </div>
     </div>
 </div>
 {% endblock %}

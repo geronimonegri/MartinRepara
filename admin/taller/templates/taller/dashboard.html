@@ -1,9 +1,10 @@
 {% extends 'taller/base.html' %}
-{% load taller_extras %}
+{% load static taller_extras %}
 
 {% block title %}Dashboard · Gestión Taller{% endblock %}
 
 {% block content %}
+<img src="{% static 'taller/img/logo.jpeg' %}" alt="Martín repara." class="dashboard-logo">
 <h1 class="page-title">Dashboard</h1>
 
 <div class="dashboard-grid">

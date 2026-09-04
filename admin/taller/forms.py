@@ -1,4 +1,7 @@
+from decimal import Decimal
+
 from django import forms
+from django.db.models import F, Q, Sum
 
 from .models import Cliente, Gasto, Pago, Trabajo
 
@@ -7,8 +10,12 @@ class TrabajoForm(forms.ModelForm):
     """Formulario de alta de Trabajo.
 
     El mockup pide campos sueltos "Cliente" y "Teléfono" en vez de elegir
-    un Cliente existente. Se resuelve en save(): si ya existe un Cliente
-    con ese teléfono se reutiliza, si no se crea uno nuevo.
+    un Cliente existente. Se resuelve en save(): se reutiliza un Cliente
+    existente solo si coinciden teléfono Y nombre (sin distinguir
+    mayúsculas ni espacios); si el teléfono ya existe pero con otro
+    nombre, se crea un Cliente nuevo en vez de renombrar el existente
+    (mismo teléfono no implica misma persona: puede ser un número
+    compartido en una familia, o un error de tipeo).
     """
 
     cliente_nombre = forms.CharField(
@@ -99,14 +106,15 @@ class TrabajoForm(forms.ModelForm):
         return cleaned_data
 
     def save(self, commit=True):
-        nombre = self.cleaned_data['cliente_nombre']
-        cliente, created = Cliente.objects.get_or_create(
-            telefono=self.cleaned_data['cliente_telefono'],
-            defaults={'nombre': nombre},
-        )
-        if not created and cliente.nombre != nombre:
-            cliente.nombre = nombre
-            cliente.save()
+        nombre = ' '.join(self.cleaned_data['cliente_nombre'].split())
+        telefono = self.cleaned_data['cliente_telefono'].strip()
+
+        cliente = Cliente.objects.filter(
+            telefono=telefono, nombre__iexact=nombre
+        ).first()
+        if cliente is None:
+            cliente = Cliente.objects.create(nombre=nombre, telefono=telefono)
+
         trabajo = super().save(commit=False)
         trabajo.cliente = cliente
         if commit:
@@ -117,14 +125,13 @@ class TrabajoForm(forms.ModelForm):
 class GastoForm(forms.ModelForm):
     class Meta:
         model = Gasto
-        fields = ['descripcion', 'monto', 'proveedor', 'categoria', 'fecha', 'trabajo']
+        fields = ['descripcion', 'monto', 'proveedor', 'categoria', 'fecha']
         labels = {
             'descripcion': 'Descripción',
             'monto': 'Monto',
             'proveedor': 'Proveedor',
             'categoria': 'Categoría',
             'fecha': 'Fecha',
-            'trabajo': 'Trabajo asociado',
         }
         widgets = {
             'descripcion': forms.TextInput(attrs={
@@ -145,16 +152,12 @@ class GastoForm(forms.ModelForm):
                 'class': 'form-control',
                 'type': 'date',
             }),
-            'trabajo': forms.Select(attrs={'class': 'form-control'}),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['monto'].required = True
         self.fields['categoria'].choices = Gasto.Categoria.choices
-        self.fields['trabajo'].required = False
-        self.fields['trabajo'].queryset = Trabajo.objects.select_related('cliente').order_by('-fecha_ingreso')
-        self.fields['trabajo'].empty_label = 'Sin trabajo asociado (gasto general)'
 
 
 class PagoForm(forms.ModelForm):
@@ -191,16 +194,36 @@ class PagoForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.fields['monto'].required = True
         self.fields['forma_pago'].choices = Pago.FormaPago.choices
-        self.fields['trabajo'].queryset = Trabajo.objects.select_related('cliente').order_by('-fecha_ingreso')
+
+        trabajos_con_pagado = Trabajo.objects.annotate(pagado=Sum('pagos__monto'))
+        con_saldo = trabajos_con_pagado.filter(
+            Q(precio_acordado__isnull=True)
+            | Q(pagado__isnull=True)
+            | Q(pagado__lt=F('precio_acordado'))
+        ).values_list('pk', flat=True)
+        pks_permitidos = set(con_saldo)
+        if self.instance.pk and self.instance.trabajo_id:
+            pks_permitidos.add(self.instance.trabajo_id)
+
+        self.fields['trabajo'].queryset = (
+            Trabajo.objects.select_related('cliente')
+            .annotate(pagado=Sum('pagos__monto'))
+            .filter(pk__in=pks_permitidos)
+            .order_by('-fecha_ingreso')
+        )
         self.fields['trabajo'].label_from_instance = self._trabajo_label
         self.fields['trabajo'].empty_label = None
 
     @staticmethod
     def _trabajo_label(trabajo):
+        # trabajo.pagado viene de la anotación Sum('pagos__monto') del
+        # queryset de arriba: evita un query aparte por cada opción del
+        # <select> (N+1) al renderizar el formulario.
         base = f'{trabajo.cliente.nombre} - {trabajo.get_categoria_dispositivo_display()}'
         if trabajo.precio_acordado is None:
             return base
-        saldo = trabajo.precio_acordado - trabajo.total_pagado()
+        pagado = trabajo.pagado or Decimal('0')
+        saldo = trabajo.precio_acordado - pagado
         if saldo <= 0:
             return f'{base} (pagado)'
         formateado = f'{int(round(saldo)):,}'.replace(',', '.')

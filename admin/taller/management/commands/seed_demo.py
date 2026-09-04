@@ -1,6 +1,7 @@
 from decimal import Decimal
 from datetime import date
 
+from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand
 
 from taller.models import Cliente, Gasto, Pago, Trabajo
@@ -20,6 +21,15 @@ class Command(BaseCommand):
     help = 'Carga (o recarga) datos de demostración para Trabajo/Gasto/Cliente.'
 
     def handle(self, *args, **options):
+        if not User.objects.filter(is_superuser=True).exists():
+            User.objects.create_superuser(
+                username='martin', email='', password='martinrepara2026'
+            )
+            self.stdout.write(self.style.SUCCESS(
+                'Superusuario creado: usuario "martin" / contraseña '
+                '"martinrepara2026" (cambiarla en producción).'
+            ))
+
         Pago.objects.all().delete()
         Trabajo.objects.all().delete()
         Gasto.objects.all().delete()

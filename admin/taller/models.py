@@ -1,7 +1,10 @@
 from decimal import Decimal
 
+from django.core.validators import MinValueValidator
 from django.db import models
 from django.db.models import Sum
+
+MONTO_NEGATIVO_MSG = 'Este monto no puede ser negativo.'
 
 
 class Cliente(models.Model):
@@ -64,7 +67,8 @@ class Trabajo(models.Model):
         max_length=20, choices=Estado.choices, default=Estado.RECIBIDO
     )
     precio_acordado = models.DecimalField(
-        'precio acordado', max_digits=10, decimal_places=2, null=True, blank=True
+        'precio acordado', max_digits=10, decimal_places=2, null=True, blank=True,
+        validators=[MinValueValidator(0, message=MONTO_NEGATIVO_MSG)],
     )
     fecha_ingreso = models.DateField('fecha de ingreso')
     fecha_entrega = models.DateField('fecha de entrega', null=True, blank=True)
@@ -122,17 +126,12 @@ class Gasto(models.Model):
 
     descripcion = models.CharField(max_length=255)
     proveedor = models.CharField('proveedor', max_length=150, blank=True)
-    monto = models.DecimalField(max_digits=10, decimal_places=2)
+    monto = models.DecimalField(
+        max_digits=10, decimal_places=2,
+        validators=[MinValueValidator(0, message=MONTO_NEGATIVO_MSG)],
+    )
     categoria = models.CharField(max_length=20, choices=Categoria.choices)
     fecha = models.DateField()
-    trabajo = models.ForeignKey(
-        Trabajo,
-        verbose_name='trabajo asociado',
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name='gastos',
-    )
 
     objects = GastoManager()
 
@@ -168,7 +167,10 @@ class Pago(models.Model):
         TARJETA = 'tarjeta', 'Tarjeta'
         OTRO = 'otro', 'Otro'
 
-    monto = models.DecimalField(max_digits=10, decimal_places=2)
+    monto = models.DecimalField(
+        max_digits=10, decimal_places=2,
+        validators=[MinValueValidator(0, message=MONTO_NEGATIVO_MSG)],
+    )
     forma_pago = models.CharField(
         'forma de pago', max_length=20, choices=FormaPago.choices
     )

@@ -16,11 +16,60 @@
     <div class="search-form">
         <input type="text" id="trabajo-search" value="{{ query }}" placeholder="Buscar por nombre de cliente..." class="search-input" autocomplete="off">
     </div>
+</div>
+
+<div class="filter-rows">
     <div class="chip-group">
-        <a href="?q={{ query|urlencode }}" class="chip {% if not estado_filter %}active{% endif %}">Todos</a>
-        {% for value, label in estados %}
-            <a href="?q={{ query|urlencode }}&estado={{ value }}" class="chip {% if estado_filter == value %}active{% endif %}">{{ label }}</a>
+        <a href="?q={{ query|urlencode }}{% if categoria_filter %}&categoria={{ categoria_filter }}{% endif %}" class="chip {% if not estado_filter %}active{% endif %}">Todos</a>
+        {% for value, label in estados_filtro %}
+            <a href="?q={{ query|urlencode }}&estado={{ value }}{% if categoria_filter %}&categoria={{ categoria_filter }}{% endif %}" class="chip {% if estado_filter == value %}active{% endif %}">{{ label }}</a>
         {% endfor %}
+    </div>
+    <div class="chip-group">
+        <a href="?q={{ query|urlencode }}{% if estado_filter %}&estado={{ estado_filter }}{% endif %}" class="chip {% if not categoria_filter %}active{% endif %}">Todos</a>
+        {% for value, label in dispositivo_choices %}
+            <a href="?q={{ query|urlencode }}&categoria={{ value }}{% if estado_filter %}&estado={{ estado_filter }}{% endif %}" class="chip {% if categoria_filter == value %}active{% endif %}">{{ label }}</a>
+        {% endfor %}
+    </div>
+</div>
+
+<div class="table-card">
+    <table class="trabajos-table" id="trabajos-table-main">
+        <thead>
+            <tr>
+                <th>Cliente</th>
+                <th>Dispositivo</th>
+                <th>Problema</th>
+                <th>Estado</th>
+                <th>Precio</th>
+                <th>Ingreso</th>
+                <th>Entrega</th>
+                <th>Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for trabajo in trabajos %}
+                {% include 'taller/_trabajo_row.html' %}
+            {% empty %}
+                <tr>
+                    <td colspan="8" class="empty-state">No se encontraron trabajos.</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <div id="js-empty-row" class="empty-state js-empty-row">No se encontraron trabajos.</div>
+</div>
+
+<div class="page-header-row entregados-header">
+    <h2 class="section-title">Entregados</h2>
+    <div class="month-nav">
+        <a href="?mes_entregados={{ mes_entregados_anterior_valor }}" class="month-nav-btn" aria-label="Mes anterior">&lsaquo;</a>
+        <span class="month-nav-label">{{ mes_entregados_fecha|date:"F Y"|capfirst }}</span>
+        {% if puede_avanzar_entregados %}
+            <a href="?mes_entregados={{ mes_entregados_siguiente_valor }}" class="month-nav-btn" aria-label="Mes siguiente">&rsaquo;</a>
+        {% else %}
+            <span class="month-nav-btn month-nav-btn-disabled" aria-disabled="true">&rsaquo;</span>
+        {% endif %}
     </div>
 </div>
 
@@ -35,79 +84,25 @@
                 <th>Precio</th>
                 <th>Ingreso</th>
                 <th>Entrega</th>
-                <th>Pago</th>
                 <th>Acciones</th>
             </tr>
         </thead>
         <tbody>
-            {% for trabajo in trabajos %}
-                <tr data-cliente="{{ trabajo.cliente.nombre|lower }}">
-                    <td>
-                        <div class="row-title">{{ trabajo.cliente.nombre }}</div>
-                        <div class="row-subtitle">{{ trabajo.cliente.telefono }}</div>
-                    </td>
-                    <td>
-                        <div class="device-cell">
-                            {% device_icon trabajo.categoria_dispositivo %}
-                            <span>{{ trabajo.get_categoria_dispositivo_display }}{% if trabajo.subtipo_dispositivo %} · {{ trabajo.get_subtipo_dispositivo_display }}{% endif %}</span>
-                        </div>
-                    </td>
-                    <td class="problema-cell">{{ trabajo.descripcion_problema }}</td>
-                    <td>
-                        <form method="post" action="{% url 'taller:trabajo_estado_update' trabajo.pk %}" class="estado-form">
-                            {% csrf_token %}
-                            <input type="hidden" name="next" value="{{ request.get_full_path }}">
-                            <select name="estado" class="estado-select estado-{{ trabajo.estado }}" onchange="this.form.submit()">
-                                {% for value, label in estados %}
-                                    <option value="{{ value }}" {% if trabajo.estado == value %}selected{% endif %}>{{ label }}</option>
-                                {% endfor %}
-                            </select>
-                        </form>
-                    </td>
-                    <td>{{ trabajo.precio_acordado|moneda }}</td>
-                    <td>{{ trabajo.fecha_ingreso|date:"d/m/Y" }}</td>
-                    <td>{{ trabajo.fecha_entrega|date:"d/m/Y"|default:"—" }}</td>
-                    <td>
-                        {% if trabajo.esta_pagado_calc %}
-                            <a href="{% url 'taller:pago_create' %}?mes={{ trabajo.ultimo_pago.fecha|date:'Y-m' }}#pago-{{ trabajo.ultimo_pago.pk }}" class="pago-info">
-                                Pagado el {{ trabajo.ultimo_pago.fecha|date:"d/m" }} · Pago #{{ trabajo.ultimo_pago.pk }}
-                            </a>
-                        {% elif trabajo.total_pagado_calc > 0 and trabajo.precio_acordado %}
-                            <span class="pago-parcial">Pagado parcial: {{ trabajo.total_pagado_calc|moneda }} de {{ trabajo.precio_acordado|moneda }}</span>
-                        {% elif trabajo.total_pagado_calc > 0 %}
-                            <span class="pago-parcial">Pagado parcial: {{ trabajo.total_pagado_calc|moneda }}</span>
-                        {% else %}
-                            <span class="row-subtitle">—</span>
-                        {% endif %}
-                    </td>
-                    <td>
-                        <div class="row-actions">
-                            <a href="{% url 'taller:trabajo_edit' trabajo.pk %}" class="icon-btn" aria-label="Editar trabajo" title="Editar">
-                                {% nav_icon 'edit' %}
-                            </a>
-                            <form method="post" action="{% url 'taller:trabajo_delete' trabajo.pk %}" class="icon-form trabajo-delete-form" data-cliente="{{ trabajo.cliente.nombre }}">
-                                {% csrf_token %}
-                                <button type="submit" class="icon-btn icon-btn-danger" aria-label="Eliminar trabajo" title="Eliminar">
-                                    {% nav_icon 'trash' %}
-                                </button>
-                            </form>
-                        </div>
-                    </td>
-                </tr>
+            {% for trabajo in entregados %}
+                {% include 'taller/_trabajo_row.html' %}
             {% empty %}
                 <tr>
-                    <td colspan="9" class="empty-state">No se encontraron trabajos.</td>
+                    <td colspan="8" class="empty-state">No hay trabajos entregados en este mes.</td>
                 </tr>
             {% endfor %}
         </tbody>
     </table>
-    <div id="js-empty-row" class="empty-state js-empty-row">No se encontraron trabajos.</div>
 </div>
 
 <script>
 (function () {
     var input = document.getElementById('trabajo-search');
-    var rows = document.querySelectorAll('.trabajos-table tbody tr[data-cliente]');
+    var rows = document.querySelectorAll('#trabajos-table-main tbody tr[data-cliente]');
     var emptyRow = document.getElementById('js-empty-row');
     var chips = document.querySelectorAll('.chip-group .chip');
 
