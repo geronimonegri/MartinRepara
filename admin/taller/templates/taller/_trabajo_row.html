@@ -1,13 +1,16 @@
 {% load taller_extras %}
 <tr data-cliente="{{ trabajo.cliente.nombre|lower }}">
+    <td class="numero-cell">{{ trabajo.numero }}</td>
     <td>
         <div class="row-title">{{ trabajo.cliente.nombre }}</div>
         <div class="row-subtitle">{{ trabajo.cliente.telefono }}</div>
     </td>
     <td>
         <div class="device-cell">
-            {% device_icon trabajo.categoria_dispositivo %}
-            <span>{{ trabajo.get_categoria_dispositivo_display }}{% if trabajo.subtipo_dispositivo %} · {{ trabajo.get_subtipo_dispositivo_display }}{% endif %}</span>
+            {% device_icon trabajo.tipo_dispositivo.nombre %}
+            <span>
+                {{ trabajo.tipo_dispositivo.nombre }}{% if trabajo.marca %} · {{ trabajo.marca.nombre }}{% if trabajo.modelo %} {{ trabajo.modelo.nombre }}{% endif %}{% endif %}
+            </span>
         </div>
     </td>
     <td class="problema-cell">{{ trabajo.descripcion_problema }}</td>
@@ -30,6 +33,13 @@
         {% endif %}
     </td>
     <td>{{ trabajo.precio_acordado|moneda }}</td>
+    <td>
+        {% if trabajo.ganancia is not None %}
+            <span class="{% if trabajo.ganancia >= 0 %}ganancia-positiva{% else %}ganancia-negativa{% endif %}">{{ trabajo.ganancia|moneda }}</span>
+        {% else %}
+            <span class="row-subtitle">—</span>
+        {% endif %}
+    </td>
     <td>{{ trabajo.fecha_ingreso|date:"d/m/Y" }}</td>
     <td>{{ trabajo.fecha_entrega|date:"d/m/Y"|default:"—" }}</td>
     <td>

@@ -1,0 +1,24 @@
+{% load taller_extras %}
+<div class="panel-card">
+    <h2 class="panel-title">Repuestos más usados</h2>
+    {% if repuestos %}
+        <div class="table-card">
+            <table class="trabajos-table">
+                <thead>
+                    <tr><th>Tipo de repuesto</th><th>Cantidad usada</th><th>Costo</th></tr>
+                </thead>
+                <tbody>
+                    {% for r in repuestos %}
+                        <tr>
+                            <td>{{ r.nombre }}</td>
+                            <td>{{ r.cantidad }}</td>
+                            <td>{{ r.costo|moneda }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="empty-state">No se usaron repuestos en este período.</div>
+    {% endif %}
+</div>

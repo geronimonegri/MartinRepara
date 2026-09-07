@@ -1,0 +1,21 @@
+{% load taller_extras %}
+<div class="repuesto-usado-row">
+    {% for hidden in form.hidden_fields %}{{ hidden }}{% endfor %}
+    <select name="{{ form.gasto.html_name }}" id="{{ form.gasto.id_for_label }}" class="form-control repuesto-gasto-select">
+        <option value="">— Elegí un repuesto —</option>
+        {% for obj in form.fields.gasto.queryset %}
+            <option value="{{ obj.pk }}" data-tipo-dispositivo="{{ obj.tipo_dispositivo_id }}"
+                    {% if form.gasto.value|stringformat:"s" == obj.pk|stringformat:"s" %}selected{% endif %}>
+                {{ obj|gasto_repuesto_label }}
+            </option>
+        {% endfor %}
+    </select>
+    <input type="number" name="{{ form.cantidad.html_name }}" id="{{ form.cantidad.id_for_label }}"
+           value="{{ form.cantidad.value|default:'' }}" min="1" step="1"
+           class="form-control repuesto-cantidad-input" placeholder="Cant.">
+    <button type="button" class="btn-add repuesto-usado-quitar" title="Quitar">{% nav_icon 'trash' %}</button>
+    <span class="repuesto-usado-delete-oculto">{{ form.DELETE }}</span>
+    {% for error in form.gasto.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+    {% for error in form.cantidad.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+    {% for error in form.non_field_errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+</div>

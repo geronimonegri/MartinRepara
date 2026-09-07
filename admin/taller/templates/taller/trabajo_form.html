@@ -6,8 +6,8 @@
 {% block content %}
 <h1 class="page-title">{% if form.instance.pk %}Editar trabajo{% else %}Nuevo trabajo{% endif %}</h1>
 
-<div class="form-card">
-    <form method="post" novalidate>
+<div class="form-card form-card-ancho">
+    <form method="post" novalidate id="trabajo-form">
         {% csrf_token %}
 
         <div class="form-row">
@@ -24,47 +24,80 @@
         </div>
 
         <div class="form-group">
-            <label>{{ form.categoria_dispositivo.label }}</label>
+            <label>{{ form.tipo_dispositivo.label }}</label>
             <div class="option-grid device-grid">
-                {% for value, label in form.fields.categoria_dispositivo.choices %}
+                {% for tipo in form.fields.tipo_dispositivo.queryset %}
                     <label class="device-option">
-                        <input type="radio" name="categoria_dispositivo" value="{{ value }}" class="hidden-radio categoria-dispositivo-radio"
-                               {% if form.categoria_dispositivo.value == value %}checked{% endif %}>
-                        {% device_icon value %}
-                        <span>{{ label }}</span>
+                        <input type="radio" name="tipo_dispositivo" value="{{ tipo.pk }}" class="hidden-radio tipo-dispositivo-radio"
+                               data-nombre="{{ tipo.nombre }}"
+                               {% if form.tipo_dispositivo.value|stringformat:"s" == tipo.pk|stringformat:"s" %}checked{% endif %}>
+                        {% device_icon tipo.nombre %}
+                        <span>{{ tipo.nombre }}</span>
                     </label>
                 {% endfor %}
             </div>
-            {% for error in form.categoria_dispositivo.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+            {% for error in form.tipo_dispositivo.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
         </div>
 
-        <div class="form-group" id="subtipo-dispositivo-group">
-            <label>{{ form.subtipo_dispositivo.label }}</label>
-            <div class="option-grid category-grid subtipo-options" data-categoria="celular">
-                {% for value, label in form.subtipos_celular %}
-                    <label class="category-option">
-                        <input type="radio" name="subtipo_dispositivo" value="{{ value }}" class="hidden-radio"
-                               {% if form.subtipo_dispositivo.value == value %}checked{% endif %}>
-                        <span>{{ label }}</span>
-                    </label>
-                {% endfor %}
+        <div class="form-row">
+            <div class="form-group">
+                <label for="id_marca">{{ form.marca.label }}</label>
+                <div class="field-with-add">
+                    <select name="marca" id="id_marca" class="form-control">
+                        <option value="">{{ form.fields.marca.empty_label }}</option>
+                        {% for m in form.fields.marca.queryset %}
+                            <option value="{{ m.pk }}" data-tipo-dispositivo="{{ m.tipo_dispositivo_id }}"
+                                    {% if form.marca.value|stringformat:"s" == m.pk|stringformat:"s" %}selected{% endif %}>
+                                {{ m.nombre }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                    <button type="button" class="btn-add" id="btn-nueva-marca" title="Agregar marca nueva">{% nav_icon 'plus' %}</button>
+                </div>
+                {% for error in form.marca.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
             </div>
-            <div class="option-grid category-grid subtipo-options" data-categoria="consola">
-                {% for value, label in form.subtipos_consola %}
-                    <label class="category-option">
-                        <input type="radio" name="subtipo_dispositivo" value="{{ value }}" class="hidden-radio"
-                               {% if form.subtipo_dispositivo.value == value %}checked{% endif %}>
-                        <span>{{ label }}</span>
-                    </label>
-                {% endfor %}
+            <div class="form-group">
+                <label for="id_modelo">{{ form.modelo.label }}</label>
+                <div class="field-with-add">
+                    <select name="modelo" id="id_modelo" class="form-control">
+                        <option value="">{{ form.fields.modelo.empty_label }}</option>
+                        {% for mo in form.fields.modelo.queryset %}
+                            <option value="{{ mo.pk }}" data-marca="{{ mo.marca_id }}"
+                                    {% if form.modelo.value|stringformat:"s" == mo.pk|stringformat:"s" %}selected{% endif %}>
+                                {{ mo.nombre }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                    <button type="button" class="btn-add" id="btn-nuevo-modelo" title="Agregar modelo nuevo">{% nav_icon 'plus' %}</button>
+                </div>
+                {% for error in form.modelo.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
             </div>
-            {% for error in form.subtipo_dispositivo.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+        </div>
+
+        <div class="form-group">
+            <label for="id_tipo_reparacion">{{ form.tipo_reparacion.label }}</label>
+            <select name="tipo_reparacion" id="id_tipo_reparacion" class="form-control">
+                <option value="">{{ form.fields.tipo_reparacion.empty_label }}</option>
+                {% for tr in form.fields.tipo_reparacion.queryset %}
+                    <option value="{{ tr.pk }}" data-tipo-dispositivo="{{ tr.tipo_dispositivo_id }}"
+                            {% if form.tipo_reparacion.value|stringformat:"s" == tr.pk|stringformat:"s" %}selected{% endif %}>
+                        {{ tr.nombre }}
+                    </option>
+                {% endfor %}
+            </select>
+            {% for error in form.tipo_reparacion.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
         </div>
 
         <div class="form-group">
             <label for="{{ form.descripcion_problema.id_for_label }}">{{ form.descripcion_problema.label }}</label>
             {{ form.descripcion_problema }}
             {% for error in form.descripcion_problema.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+        </div>
+
+        <div class="form-group">
+            <label for="{{ form.detalle.id_for_label }}">{{ form.detalle.label }}</label>
+            {{ form.detalle }}
+            {% for error in form.detalle.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
         </div>
 
         <div class="form-row">
@@ -80,6 +113,52 @@
             </div>
         </div>
 
+        <div class="form-group repuestos-usados-section">
+            <label>Repuestos usados</label>
+            {{ formset.management_form }}
+            <div id="repuestos-usados-lista">
+                {% for repuesto_form in formset.forms %}
+                    {% include 'taller/_repuesto_usado_row.html' with form=repuesto_form %}
+                {% endfor %}
+            </div>
+            <template id="repuesto-usado-empty-form">
+                {% include 'taller/_repuesto_usado_row.html' with form=formset.empty_form %}
+            </template>
+            <button type="button" class="btn btn-outline btn-sm" id="btn-agregar-repuesto">{% nav_icon 'plus' %} Agregar repuesto</button>
+            {% for error in formset.non_form_errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+        </div>
+
+        <details class="tercerizacion-section">
+            <summary>Tercerización (opcional)</summary>
+            <div class="form-group">
+                <label for="id_tercero">{{ form.tercero.label }}</label>
+                <div class="field-with-add">
+                    <select name="tercero" id="id_tercero" class="form-control">
+                        <option value="">{{ form.fields.tercero.empty_label }}</option>
+                        {% for t in form.fields.tercero.queryset %}
+                            <option value="{{ t.pk }}" {% if form.tercero.value|stringformat:"s" == t.pk|stringformat:"s" %}selected{% endif %}>
+                                {{ t.nombre }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                    <button type="button" class="btn-add" id="btn-nuevo-tercero" title="Agregar tercero nuevo">{% nav_icon 'plus' %}</button>
+                </div>
+                {% for error in form.tercero.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="{{ form.tercerizado_detalle.id_for_label }}">{{ form.tercerizado_detalle.label }}</label>
+                    {{ form.tercerizado_detalle }}
+                    {% for error in form.tercerizado_detalle.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+                </div>
+                <div class="form-group">
+                    <label for="{{ form.tercerizado_monto.id_for_label }}">{{ form.tercerizado_monto.label }}</label>
+                    {{ form.tercerizado_monto }}
+                    {% for error in form.tercerizado_monto.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+                </div>
+            </div>
+        </details>
+
         <div class="form-actions">
             <a href="{% url 'taller:trabajos_list' %}" class="btn btn-outline">Cancelar</a>
             <button type="submit" class="btn btn-primary">{% if form.instance.pk %}Guardar cambios{% else %}Guardar trabajo{% endif %}</button>
@@ -89,34 +168,136 @@
 
 <script>
 (function () {
-    var categoriaRadios = document.querySelectorAll('.categoria-dispositivo-radio');
-    var subtipoGroup = document.getElementById('subtipo-dispositivo-group');
-    var subtipoOptionGroups = document.querySelectorAll('.subtipo-options');
+    var tipoRadios = document.querySelectorAll('.tipo-dispositivo-radio');
+    var marcaSelect = document.getElementById('id_marca');
+    var modeloSelect = document.getElementById('id_modelo');
+    var tipoReparacionSelect = document.getElementById('id_tipo_reparacion');
 
-    if (!categoriaRadios.length || !subtipoGroup) { return; }
+    function filtrarPorAtributo(select, atributo, valorPadre) {
+        var opciones = select.querySelectorAll('option[' + atributo + ']');
+        opciones.forEach(function (opt) {
+            opt.hidden = valorPadre !== '' && opt.getAttribute(atributo) !== valorPadre;
+        });
+        var actual = select.options[select.selectedIndex];
+        if (actual && actual.hidden) { select.value = ''; }
+    }
 
-    function actualizarSubtipo() {
-        var seleccionado = document.querySelector('.categoria-dispositivo-radio:checked');
-        var categoria = seleccionado ? seleccionado.value : null;
-        var aplica = categoria === 'celular' || categoria === 'consola';
+    function tipoDispositivoActual() {
+        var seleccionado = document.querySelector('.tipo-dispositivo-radio:checked');
+        return seleccionado ? seleccionado.value : '';
+    }
 
-        subtipoGroup.style.display = aplica ? '' : 'none';
-
-        subtipoOptionGroups.forEach(function (grupo) {
-            var esDeEstaCategoria = grupo.getAttribute('data-categoria') === categoria;
-            grupo.style.display = esDeEstaCategoria ? '' : 'none';
-            if (!esDeEstaCategoria) {
-                grupo.querySelectorAll('input[type="radio"]').forEach(function (input) {
-                    input.checked = false;
-                });
-            }
+    function actualizarPorTipoDispositivo() {
+        var valor = tipoDispositivoActual();
+        filtrarPorAtributo(marcaSelect, 'data-tipo-dispositivo', valor);
+        filtrarPorAtributo(tipoReparacionSelect, 'data-tipo-dispositivo', valor);
+        actualizarModelo();
+        document.querySelectorAll('.repuesto-gasto-select').forEach(function (select) {
+            filtrarPorAtributo(select, 'data-tipo-dispositivo', valor);
         });
     }
 
-    categoriaRadios.forEach(function (radio) {
-        radio.addEventListener('change', actualizarSubtipo);
+    function actualizarModelo() {
+        filtrarPorAtributo(modeloSelect, 'data-marca', marcaSelect.value);
+    }
+
+    tipoRadios.forEach(function (radio) {
+        radio.addEventListener('change', actualizarPorTipoDispositivo);
     });
-    actualizarSubtipo();
+    marcaSelect.addEventListener('change', actualizarModelo);
+    actualizarPorTipoDispositivo();
+
+    function csrfToken() {
+        return document.querySelector('#trabajo-form input[name=csrfmiddlewaretoken]').value;
+    }
+
+    function crearCatalogoRapido(tipo, datos) {
+        var body = new URLSearchParams();
+        Object.keys(datos).forEach(function (k) { body.set(k, datos[k]); });
+        body.set('csrfmiddlewaretoken', csrfToken());
+        return fetch('/catalogos/' + tipo + '/crear-rapido/', { method: 'POST', body: body })
+            .then(function (r) { return r.json(); });
+    }
+
+    function agregarOpcion(select, id, nombre, atributosExtra) {
+        var opt = document.createElement('option');
+        opt.value = id;
+        opt.textContent = nombre;
+        Object.keys(atributosExtra || {}).forEach(function (k) { opt.setAttribute(k, atributosExtra[k]); });
+        select.appendChild(opt);
+        select.value = id;
+        select.dispatchEvent(new Event('change'));
+    }
+
+    document.getElementById('btn-nueva-marca').addEventListener('click', function () {
+        var tipoDispositivo = tipoDispositivoActual();
+        if (!tipoDispositivo) { window.alert('Elegí primero el tipo de dispositivo.'); return; }
+        var nombre = window.prompt('Nombre de la marca nueva:');
+        if (!nombre) { return; }
+        crearCatalogoRapido('marca', { nombre: nombre, tipo_dispositivo: tipoDispositivo })
+            .then(function (data) {
+                if (data.error) { window.alert(data.error); return; }
+                agregarOpcion(marcaSelect, data.id, data.nombre, { 'data-tipo-dispositivo': tipoDispositivo });
+            });
+    });
+
+    document.getElementById('btn-nuevo-modelo').addEventListener('click', function () {
+        if (!marcaSelect.value) { window.alert('Elegí primero la marca.'); return; }
+        var nombre = window.prompt('Nombre del modelo nuevo:');
+        if (!nombre) { return; }
+        crearCatalogoRapido('modelo', { nombre: nombre, marca: marcaSelect.value })
+            .then(function (data) {
+                if (data.error) { window.alert(data.error); return; }
+                agregarOpcion(modeloSelect, data.id, data.nombre, { 'data-marca': marcaSelect.value });
+            });
+    });
+
+    var terceroSelect = document.getElementById('id_tercero');
+    document.getElementById('btn-nuevo-tercero').addEventListener('click', function () {
+        var nombre = window.prompt('Nombre del tercero nuevo:');
+        if (!nombre) { return; }
+        var telefono = window.prompt('Teléfono (opcional):') || '';
+        crearCatalogoRapido('tercero', { nombre: nombre, telefono: telefono })
+            .then(function (data) {
+                if (data.error) { window.alert(data.error); return; }
+                agregarOpcion(terceroSelect, data.id, data.nombre, {});
+            });
+    });
+
+    // --- Repuestos usados: agregar/quitar filas ---
+    var listaRepuestos = document.getElementById('repuestos-usados-lista');
+    var totalFormsInput = document.getElementById('id_repuestos_usados-TOTAL_FORMS');
+    var plantillaVacia = document.getElementById('repuesto-usado-empty-form');
+
+    function inicializarFilaQuitar(fila) {
+        var btnQuitar = fila.querySelector('.repuesto-usado-quitar');
+        if (btnQuitar) {
+            btnQuitar.addEventListener('click', function () {
+                var checkboxDelete = fila.querySelector('input[name$="-DELETE"]');
+                if (checkboxDelete) { checkboxDelete.checked = true; }
+                fila.hidden = true;
+            });
+        }
+    }
+
+    document.querySelectorAll('.repuesto-usado-row').forEach(function (fila) {
+        inicializarFilaQuitar(fila);
+        var select = fila.querySelector('.repuesto-gasto-select');
+        if (select) { filtrarPorAtributo(select, 'data-tipo-dispositivo', tipoDispositivoActual()); }
+    });
+
+    document.getElementById('btn-agregar-repuesto').addEventListener('click', function () {
+        var indice = parseInt(totalFormsInput.value, 10);
+        var html = plantillaVacia.innerHTML.split('__prefix__').join(String(indice));
+        var envoltorio = document.createElement('div');
+        envoltorio.innerHTML = html.trim();
+        var nuevaFila = envoltorio.firstElementChild;
+        listaRepuestos.appendChild(nuevaFila);
+        totalFormsInput.value = String(indice + 1);
+        inicializarFilaQuitar(nuevaFila);
+        var select = nuevaFila.querySelector('.repuesto-gasto-select');
+        if (select) { filtrarPorAtributo(select, 'data-tipo-dispositivo', tipoDispositivoActual()); }
+    });
 })();
 </script>
 {% endblock %}

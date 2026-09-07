@@ -26,9 +26,17 @@
                     {% nav_icon 'bar-chart' %}
                     <span>Balance</span>
                 </a>
+                <a href="{% url 'taller:estadisticas' %}" class="nav-item {% if request.resolver_match.url_name == 'estadisticas' %}active{% endif %}">
+                    {% nav_icon 'trending-up' %}
+                    <span>Estadísticas</span>
+                </a>
                 <a href="{% url 'taller:gasto_create' %}" class="nav-item {% if request.resolver_match.url_name == 'gasto_create' %}active{% endif %}">
                     {% nav_icon 'file-text' %}
                     <span>Gastos</span>
+                </a>
+                <a href="{% url 'taller:stock_list' %}" class="nav-item {% if request.resolver_match.url_name == 'stock_list' %}active{% endif %}">
+                    {% nav_icon 'box' %}
+                    <span>Stock</span>
                 </a>
                 <a href="{% url 'taller:pago_create' %}" class="nav-item {% if request.resolver_match.url_name == 'pago_create' or request.resolver_match.url_name == 'pago_edit' %}active{% endif %}">
                     {% nav_icon 'dollar-sign' %}
@@ -36,6 +44,10 @@
                 </a>
             </nav>
             <div class="sidebar-footer">
+                <a href="{% url 'taller:configuracion' %}" class="nav-item {% if request.resolver_match.url_name == 'configuracion' or request.resolver_match.url_name == 'configuracion_tab' or request.resolver_match.url_name == 'configuracion_editar' %}active{% endif %}">
+                    {% nav_icon 'settings' %}
+                    <span>Configuración</span>
+                </a>
                 <form method="post" action="{% url 'taller:backup_exportar' %}">
                     {% csrf_token %}
                     <button type="submit" class="nav-item nav-item-logout">

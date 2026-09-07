@@ -1,5 +1,5 @@
 {% extends 'taller/base.html' %}
-{% load taller_extras %}
+{% load static taller_extras %}
 
 {% block title %}Balance · Gestión Taller{% endblock %}
 
@@ -116,7 +116,7 @@
 {{ categorias_json|json_script:"categorias-data" }}
 {{ categorias_dispositivo_json|json_script:"categorias-dispositivo-data" }}
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="{% static 'taller/js/chart.umd.min.js' %}"></script>
 <script>
 (function () {
     if (typeof Chart === 'undefined') { return; }

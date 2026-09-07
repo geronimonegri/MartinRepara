@@ -1,0 +1,35 @@
+{% load taller_extras %}
+<div class="panel-card">
+    <h2 class="panel-title">Marcas y modelos</h2>
+    {% if marcas %}
+        <div class="marca-list">
+            {% for m in marcas %}
+                <details class="marca-item">
+                    <summary class="marca-summary">
+                        <span class="marca-nombre">{{ m.nombre }}</span>
+                        <span class="marca-stats">
+                            <span>{{ m.cantidad }} trabajo{{ m.cantidad|pluralize }}</span>
+                            <span class="{% if m.ganancia_promedio >= 0 %}ganancia-positiva{% else %}ganancia-negativa{% endif %}">{{ m.ganancia_promedio|moneda }} prom.</span>
+                        </span>
+                    </summary>
+                    <table class="modelo-table">
+                        <thead>
+                            <tr><th>Modelo</th><th>Cantidad</th><th>Ganancia promedio</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for mo in m.modelos %}
+                                <tr>
+                                    <td>{{ mo.nombre }}</td>
+                                    <td>{{ mo.cantidad }}</td>
+                                    <td><span class="{% if mo.ganancia_promedio >= 0 %}ganancia-positiva{% else %}ganancia-negativa{% endif %}">{{ mo.ganancia_promedio|moneda }}</span></td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </details>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="empty-state">No hay trabajos en este período.</div>
+    {% endif %}
+</div>

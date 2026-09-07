@@ -37,11 +37,13 @@
     <table class="trabajos-table" id="trabajos-table-main">
         <thead>
             <tr>
+                <th>N°</th>
                 <th>Cliente</th>
                 <th>Dispositivo</th>
                 <th>Problema</th>
                 <th>Estado</th>
                 <th>Precio</th>
+                <th>Ganancia</th>
                 <th>Ingreso</th>
                 <th>Entrega</th>
                 <th>Acciones</th>
@@ -52,7 +54,7 @@
                 {% include 'taller/_trabajo_row.html' %}
             {% empty %}
                 <tr>
-                    <td colspan="8" class="empty-state">No se encontraron trabajos.</td>
+                    <td colspan="10" class="empty-state">No se encontraron trabajos.</td>
                 </tr>
             {% endfor %}
         </tbody>
@@ -77,11 +79,13 @@
     <table class="trabajos-table">
         <thead>
             <tr>
+                <th>N°</th>
                 <th>Cliente</th>
                 <th>Dispositivo</th>
                 <th>Problema</th>
                 <th>Estado</th>
                 <th>Precio</th>
+                <th>Ganancia</th>
                 <th>Ingreso</th>
                 <th>Entrega</th>
                 <th>Acciones</th>
@@ -92,7 +96,7 @@
                 {% include 'taller/_trabajo_row.html' %}
             {% empty %}
                 <tr>
-                    <td colspan="8" class="empty-state">No hay trabajos entregados en este mes.</td>
+                    <td colspan="10" class="empty-state">No hay trabajos entregados en este mes.</td>
                 </tr>
             {% endfor %}
         </tbody>

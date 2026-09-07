@@ -1,10 +1,10 @@
 {% extends 'taller/base.html' %}
 {% load taller_extras %}
 
-{% block title %}{% if form.instance.pk %}Editar pago{% else %}Nuevo pago{% endif %} · Gestión Taller{% endblock %}
+{% block title %}{% if form.instance.pk %}Editar pago {{ form.instance.numero }}{% else %}Nuevo pago{% endif %} · Gestión Taller{% endblock %}
 
 {% block content %}
-<h1 class="page-title">{% if form.instance.pk %}Editar pago{% else %}Nuevo pago{% endif %}</h1>
+<h1 class="page-title">{% if form.instance.pk %}Editar pago {{ form.instance.numero }}{% else %}Nuevo pago{% endif %}</h1>
 
 <div class="gasto-page-grid">
     <div class="form-card">
@@ -66,7 +66,7 @@
                 {% for pago in pagos_historial %}
                     <div class="gasto-history-row{% if trabajo_resaltado and pago.trabajo_id == trabajo_resaltado %} gasto-history-row-activa{% endif %}">
                         <div>
-                            <span class="gasto-history-desc">Pago #{{ pago.pk }} · {{ pago.trabajo.cliente.nombre }}</span>
+                            <span class="gasto-history-desc">{{ pago.numero }} · {{ pago.trabajo.cliente.nombre }}</span>
                             <div class="row-subtitle">{{ pago.get_forma_pago_display }} · {{ pago.fecha|date:"d/m/Y" }}{% if pago.detalle %} · {{ pago.detalle }}{% endif %}</div>
                         </div>
                         <div class="row-actions">
@@ -74,6 +74,13 @@
                             <a href="{% url 'taller:pago_edit' pago.pk %}" class="icon-btn" aria-label="Editar pago" title="Editar">
                                 {% nav_icon 'edit' %}
                             </a>
+                            <form method="post" action="{% url 'taller:pago_delete' pago.pk %}" class="icon-form pago-delete-form" data-cliente="{{ pago.trabajo.cliente.nombre }}">
+                                {% csrf_token %}
+                                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                <button type="submit" class="icon-btn icon-btn-danger" aria-label="Eliminar pago" title="Eliminar">
+                                    {% nav_icon 'trash' %}
+                                </button>
+                            </form>
                         </div>
                     </div>
                 {% endfor %}
@@ -83,4 +90,20 @@
         {% endif %}
     </div>
 </div>
+
+<script>
+(function () {
+    document.querySelectorAll('.pago-delete-form').forEach(function (form) {
+        form.addEventListener('submit', function (event) {
+            var cliente = form.getAttribute('data-cliente');
+            var confirmado = window.confirm(
+                '¿Estás seguro que querés eliminar este pago de ' + cliente + '? Esta acción no se puede deshacer.'
+            );
+            if (!confirmado) {
+                event.preventDefault();
+            }
+        });
+    });
+})();
+</script>
 {% endblock %}

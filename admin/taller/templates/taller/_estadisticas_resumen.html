@@ -1,0 +1,27 @@
+{% load taller_extras %}
+<div class="stat-row">
+    <div class="stat-card">
+        <div class="stat-label">Trabajos realizados</div>
+        <div class="stat-value">{{ resumen.trabajos_realizados }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Ingresos</div>
+        <div class="stat-value">{{ resumen.ingresos|moneda }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Gastos</div>
+        <div class="stat-value">{{ resumen.gastos|moneda }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Ganancia total</div>
+        <div class="stat-value">
+            <span class="{% if resumen.ganancia_total >= 0 %}ganancia-positiva{% else %}ganancia-negativa{% endif %}">{{ resumen.ganancia_total|moneda }}</span>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Ganancia promedio</div>
+        <div class="stat-value">
+            <span class="{% if resumen.ganancia_promedio >= 0 %}ganancia-positiva{% else %}ganancia-negativa{% endif %}">{{ resumen.ganancia_promedio|moneda }}</span>
+        </div>
+    </div>
+</div>

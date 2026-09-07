@@ -14,9 +14,9 @@
             {% for trabajo in pendientes %}
                 <div class="list-row">
                     <div class="list-row-main">
-                        <div class="row-icon">{% device_icon trabajo.categoria_dispositivo %}</div>
+                        <div class="row-icon">{% device_icon trabajo.tipo_dispositivo.nombre %}</div>
                         <div>
-                            <div class="row-title">{{ trabajo.cliente.nombre }}</div>
+                            <div class="row-title">{{ trabajo.numero }} · {{ trabajo.cliente.nombre }}</div>
                             <div class="row-subtitle">{{ trabajo.descripcion_problema }}</div>
                         </div>
                     </div>
@@ -37,8 +37,8 @@
             {% for gasto in ultimos_gastos %}
                 <div class="list-row">
                     <div>
-                        <div class="row-title">{{ gasto.descripcion }}</div>
-                        <div class="row-subtitle">{{ gasto.fecha|date:"d/m/Y" }} · {{ gasto.get_categoria_display }}</div>
+                        <div class="row-title">{{ gasto.numero }} · {{ gasto.descripcion }}</div>
+                        <div class="row-subtitle">{{ gasto.fecha|date:"d/m/Y" }} · {{ gasto.categoria.nombre }}</div>
                     </div>
                     <div class="row-gasto-monto">-{{ gasto.monto|moneda }}</div>
                 </div>

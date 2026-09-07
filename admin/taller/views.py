@@ -5,15 +5,44 @@ from pathlib import Path
 
 from django.conf import settings
 from django.contrib import messages
-from django.db.models import ProtectedError
+from django.db.models import Count, ProtectedError
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from . import analytics
-from .forms import GastoForm, PagoForm, TrabajoForm
-from .models import Gasto, Pago, Trabajo
+from .forms import (
+    CategoriaGastoForm,
+    GastoForm,
+    MarcaForm,
+    ModeloForm,
+    PagoForm,
+    ProveedorForm,
+    RepuestoUsadoFormSet,
+    SubcategoriaGastoForm,
+    TerceroForm,
+    TipoDispositivoForm,
+    TipoReparacionForm,
+    TipoRepuestoForm,
+    TrabajoForm,
+    _sincronizar_gasto_tercerizado,
+)
+from .models import (
+    CategoriaGasto,
+    Gasto,
+    Marca,
+    Modelo,
+    Pago,
+    Proveedor,
+    SubcategoriaGasto,
+    Tercero,
+    TipoDispositivo,
+    TipoReparacion,
+    TipoRepuesto,
+    Trabajo,
+)
 
 
 def _parse_mes_param(mes_param):
@@ -37,10 +66,10 @@ def _parse_mes_param(mes_param):
 def dashboard(request):
     pendientes = (
         Trabajo.objects.exclude(estado=Trabajo.Estado.ENTREGADO)
-        .select_related('cliente')
+        .select_related('cliente', 'tipo_dispositivo')
         .order_by('fecha_ingreso')
     )
-    ultimos_gastos = Gasto.objects.all()[:5]
+    ultimos_gastos = Gasto.objects.select_related('categoria').all()[:5]
     return render(request, 'taller/dashboard.html', {
         'pendientes': pendientes,
         'ultimos_gastos': ultimos_gastos,
@@ -66,7 +95,8 @@ def trabajos_list(request):
     categoria_filter = request.GET.get('categoria', '').strip()
 
     trabajos = (
-        Trabajo.objects.select_related('cliente').prefetch_related('pagos')
+        Trabajo.objects.select_related('cliente', 'tipo_dispositivo', 'marca', 'modelo')
+        .prefetch_related('pagos', 'repuestos_usados__gasto')
         .exclude(estado=Trabajo.Estado.ENTREGADO)
     )
     if query:
@@ -74,7 +104,7 @@ def trabajos_list(request):
     if estado_filter:
         trabajos = trabajos.filter(estado=estado_filter)
     if categoria_filter:
-        trabajos = trabajos.filter(categoria_dispositivo=categoria_filter)
+        trabajos = trabajos.filter(tipo_dispositivo_id=categoria_filter)
 
     hoy = timezone.now().date()
     mes_param = request.GET.get('mes_entregados')
@@ -89,7 +119,8 @@ def trabajos_list(request):
     anio_e_next, mes_e_next = analytics.mes_siguiente(anio_e, mes_e)
 
     entregados = (
-        Trabajo.objects.select_related('cliente').prefetch_related('pagos')
+        Trabajo.objects.select_related('cliente', 'tipo_dispositivo', 'marca', 'modelo')
+        .prefetch_related('pagos', 'repuestos_usados__gasto')
         .filter(
             estado=Trabajo.Estado.ENTREGADO,
             fecha_entrega__year=anio_e, fecha_entrega__month=mes_e,
@@ -100,6 +131,9 @@ def trabajos_list(request):
         (value, label) for value, label in Trabajo.Estado.choices
         if value != Trabajo.Estado.ENTREGADO
     ]
+    dispositivo_choices = [
+        (str(t.pk), t.nombre) for t in TipoDispositivo.objects.filter(activo=True)
+    ]
 
     return render(request, 'taller/trabajos_list.html', {
         'trabajos': _con_indicador_pago(trabajos),
@@ -109,7 +143,7 @@ def trabajos_list(request):
         'categoria_filter': categoria_filter,
         'estados': Trabajo.Estado.choices,
         'estados_filtro': estados_filtro,
-        'dispositivo_choices': Trabajo.CategoriaDispositivo.choices,
+        'dispositivo_choices': dispositivo_choices,
         'mes_entregados_fecha': date(anio_e, mes_e, 1),
         'mes_entregados_anterior_valor': f'{anio_e_prev:04d}-{mes_e_prev:02d}',
         'mes_entregados_siguiente_valor': f'{anio_e_next:04d}-{mes_e_next:02d}',
@@ -136,11 +170,20 @@ def trabajo_create(request):
     if request.method == 'POST':
         form = TrabajoForm(request.POST)
         if form.is_valid():
-            form.save()
-            return redirect('taller:trabajos_list')
+            trabajo = form.save(commit=False)
+            formset = RepuestoUsadoFormSet(request.POST, instance=trabajo)
+            if formset.is_valid():
+                trabajo.save()
+                _sincronizar_gasto_tercerizado(trabajo)
+                formset.instance = trabajo
+                formset.save()
+                return redirect('taller:trabajos_list')
+        else:
+            formset = RepuestoUsadoFormSet(request.POST)
     else:
         form = TrabajoForm(initial={'fecha_ingreso': timezone.now().date()})
-    return render(request, 'taller/trabajo_form.html', {'form': form})
+        formset = RepuestoUsadoFormSet()
+    return render(request, 'taller/trabajo_form.html', {'form': form, 'formset': formset})
 
 
 def trabajo_edit(request, pk):
@@ -148,15 +191,20 @@ def trabajo_edit(request, pk):
 
     if request.method == 'POST':
         form = TrabajoForm(request.POST, instance=trabajo)
-        if form.is_valid():
+        formset = RepuestoUsadoFormSet(request.POST, instance=trabajo)
+        if form.is_valid() and formset.is_valid():
             form.save()
+            formset.save()
             return redirect('taller:trabajos_list')
     else:
         form = TrabajoForm(instance=trabajo, initial={
             'cliente_nombre': trabajo.cliente.nombre,
             'cliente_telefono': trabajo.cliente.telefono,
         })
-    return render(request, 'taller/trabajo_form.html', {'form': form, 'trabajo': trabajo})
+        formset = RepuestoUsadoFormSet(instance=trabajo)
+    return render(request, 'taller/trabajo_form.html', {
+        'form': form, 'formset': formset, 'trabajo': trabajo,
+    })
 
 
 @require_POST
@@ -173,23 +221,17 @@ def trabajo_delete(request, pk):
     return redirect('taller:trabajos_list')
 
 
-def gasto_create(request):
+def _gasto_historial_context(request):
+    """Datos de navegación por mes + historial filtrado, compartidos por
+    gasto_create y gasto_edit. Devuelve None si el parámetro 'mes' de la
+    URL es inválido (el caller debe redirigir a request.path en ese caso).
+    """
     hoy = timezone.now().date()
-
-    if request.method == 'POST':
-        form = GastoForm(request.POST)
-        if form.is_valid():
-            gasto = form.save()
-            mes_valor = f'{gasto.fecha.year:04d}-{gasto.fecha.month:02d}'
-            return redirect(f"{reverse('taller:gasto_create')}?mes={mes_valor}")
-    else:
-        form = GastoForm(initial={'fecha': hoy})
-
     mes_param = request.GET.get('mes')
     if mes_param:
         parsed = _parse_mes_param(mes_param)
         if parsed is None:
-            return redirect(request.path)
+            return None
         anio, mes = parsed
     else:
         anio, mes = hoy.year, hoy.month
@@ -197,16 +239,144 @@ def gasto_create(request):
     anio_prev, mes_prev = analytics.mes_anterior(anio, mes)
     anio_next, mes_next = analytics.mes_siguiente(anio, mes)
 
-    gastos_mes = Gasto.objects.filter(fecha__year=anio, fecha__month=mes)
+    categoria_filter = request.GET.get('categoria', '').strip()
+    gastos_mes = (
+        Gasto.objects.select_related('categoria', 'subcategoria')
+        .annotate(usos_count=Count('usos'))
+        .filter(fecha__year=anio, fecha__month=mes)
+    )
+    if categoria_filter:
+        gastos_mes = gastos_mes.filter(categoria_id=categoria_filter)
 
-    return render(request, 'taller/gasto_form.html', {
-        'form': form,
+    return {
         'mes_fecha': date(anio, mes, 1),
         'mes_anterior_valor': f'{anio_prev:04d}-{mes_prev:02d}',
         'mes_siguiente_valor': f'{anio_next:04d}-{mes_next:02d}',
         'puede_avanzar': (anio, mes) < (hoy.year, hoy.month),
         'gastos_mes': gastos_mes,
         'total_mes': Gasto.objects.total_mes(anio, mes),
+        'categoria_filter': categoria_filter,
+        'categorias_filtro': CategoriaGasto.objects.filter(activo=True),
+    }
+
+
+def _gasto_form_catalogos():
+    """Catálogos que necesita el JS del form de Gasto (selects dependientes
+    y botones '+'), compartidos por gasto_create y gasto_edit."""
+    return {
+        'categorias_gasto': CategoriaGasto.objects.filter(activo=True),
+        'subcategorias_gasto': SubcategoriaGasto.objects.filter(activo=True).select_related('categoria'),
+        'tipos_dispositivo': TipoDispositivo.objects.filter(activo=True),
+        'tipos_repuesto': TipoRepuesto.objects.filter(activo=True).select_related('tipo_dispositivo'),
+        'marcas': Marca.objects.filter(activo=True).select_related('tipo_dispositivo'),
+        'modelos': Modelo.objects.filter(activo=True).select_related('marca'),
+        'proveedores': Proveedor.objects.filter(activo=True),
+    }
+
+
+def gasto_create(request):
+    if request.method == 'POST':
+        form = GastoForm(request.POST)
+        if form.is_valid():
+            gasto = form.save()
+            mes_valor = f'{gasto.fecha.year:04d}-{gasto.fecha.month:02d}'
+            return redirect(f"{reverse('taller:gasto_create')}?mes={mes_valor}")
+    else:
+        form = GastoForm(initial={'fecha': timezone.now().date()})
+
+    historial = _gasto_historial_context(request)
+    if historial is None:
+        return redirect(request.path)
+
+    context = {'form': form}
+    context.update(historial)
+    context.update(_gasto_form_catalogos())
+    return render(request, 'taller/gasto_form.html', context)
+
+
+def gasto_edit(request, pk):
+    gasto = get_object_or_404(Gasto, pk=pk)
+
+    # Los gastos "Tercerizado" los genera solo _sincronizar_gasto_tercerizado()
+    # desde un Trabajo: no se editan desde acá, se edita el trabajo.
+    if gasto.categoria.nombre == 'Tercerizado':
+        if gasto.trabajo_id:
+            return redirect('taller:trabajo_edit', pk=gasto.trabajo_id)
+        messages.error(
+            request,
+            'Este gasto se generó automáticamente desde un trabajo tercerizado y no se puede editar acá.',
+        )
+        return redirect('taller:gasto_create')
+
+    if request.method == 'POST':
+        form = GastoForm(request.POST, instance=gasto)
+        if form.is_valid():
+            gasto = form.save()
+            mes_valor = f'{gasto.fecha.year:04d}-{gasto.fecha.month:02d}'
+            return redirect(f"{reverse('taller:gasto_create')}?mes={mes_valor}")
+    else:
+        form = GastoForm(instance=gasto)
+
+    historial = _gasto_historial_context(request)
+    if historial is None:
+        return redirect(request.path)
+
+    context = {'form': form}
+    context.update(historial)
+    context.update(_gasto_form_catalogos())
+    return render(request, 'taller/gasto_form.html', context)
+
+
+@require_POST
+def gasto_delete(request, pk):
+    gasto = get_object_or_404(Gasto, pk=pk)
+    next_url = request.POST.get('next') or reverse('taller:gasto_create')
+
+    if gasto.categoria.nombre == 'Tercerizado':
+        messages.error(
+            request,
+            'Este gasto se generó automáticamente desde un trabajo tercerizado y no se puede eliminar acá.',
+        )
+        return redirect(next_url)
+
+    try:
+        gasto.delete()
+    except ProtectedError:
+        numeros = ', '.join(sorted({
+            uso.trabajo.numero for uso in gasto.usos.select_related('trabajo').all()
+        }))
+        messages.error(
+            request,
+            f'Este repuesto ya se usó en {numeros} y no se puede eliminar. Podés editarlo.',
+        )
+    return redirect(next_url)
+
+
+def stock_list(request):
+    categoria_filter = request.GET.get('categoria', '').strip()
+
+    items = (
+        Gasto.objects.filter(categoria__nombre='Repuestos', stock_disponible__gt=0)
+        .select_related('tipo_repuesto', 'marca', 'modelo', 'proveedor', 'tipo_dispositivo')
+    )
+    if categoria_filter:
+        items = items.filter(tipo_dispositivo_id=categoria_filter)
+    items = items.order_by('tipo_dispositivo__orden', 'tipo_repuesto__orden', 'numero')
+
+    total_valorizado = sum(
+        ((g.precio_unitario or Decimal('0')) * (g.stock_disponible or 0) for g in items),
+        Decimal('0'),
+    )
+
+    dispositivo_choices = [
+        (str(t.pk), t.nombre) for t in TipoDispositivo.objects.filter(activo=True)
+    ]
+
+    return render(request, 'taller/stock_list.html', {
+        'items': items,
+        'categoria_filter': categoria_filter,
+        'dispositivo_choices': dispositivo_choices,
+        'total_valorizado': total_valorizado,
     })
 
 
@@ -258,19 +428,54 @@ def pago_edit(request, pk):
     return render(request, 'taller/pago_form.html', context)
 
 
-CATEGORIA_COLORES = {
-    'repuesto': '#1c1c1a',
-    'herramienta': '#c9a24b',
-    'taller': '#7c3aed',
-    'otro': '#8891a5',
-}
+@require_POST
+def pago_delete(request, pk):
+    pago = get_object_or_404(Pago, pk=pk)
+    # El estado de pago del trabajo (parcial/completo) no se guarda aparte:
+    # sale de total_pagado()/esta_pagado(), que suman los Pago existentes
+    # al vuelo. Al borrar uno, se recalcula solo la próxima vez que se lea.
+    pago.delete()
+    next_url = request.POST.get('next') or reverse('taller:pago_create')
+    return redirect(next_url)
 
-CATEGORIA_DISPOSITIVO_COLORES = {
-    'celular': '#1c1c1a',
-    'consola': '#c9a24b',
-    'notebook': '#7c3aed',
-    'otro': '#8891a5',
-}
+
+def estadisticas(request):
+    periodo = request.GET.get('periodo', analytics.PERIODO_DEFAULT)
+    if periodo not in analytics.PERIODO_VALORES:
+        periodo = analytics.PERIODO_DEFAULT
+    desde, hasta = analytics.rango_periodo(periodo)
+
+    dispositivos = list(TipoDispositivo.objects.filter(activo=True))
+    tabs = []
+    for tipo in dispositivos:
+        tabs.append({
+            'tipo': tipo,
+            'resumen': analytics.resumen_periodo(desde, hasta, tipo_dispositivo=tipo),
+            'reparaciones': analytics.reparaciones_mas_frecuentes(desde, hasta, tipo_dispositivo=tipo),
+            'marcas': analytics.marcas_mas_frecuentes(desde, hasta, tipo_dispositivo=tipo),
+            'repuestos': analytics.repuestos_mas_usados(desde, hasta, tipo_dispositivo=tipo),
+        })
+    tab_default = next((t['tipo'].pk for t in tabs if t['tipo'].nombre == 'Celular'), tabs[0]['tipo'].pk if tabs else None)
+
+    categorias_gasto = analytics.gastos_por_categoria_con_detalle(desde, hasta)
+    categorias_gasto_json = [
+        {'nombre': c['nombre'], 'total': float(c['total']), 'color': c['color']}
+        for c in categorias_gasto
+    ]
+
+    return render(request, 'taller/estadisticas.html', {
+        'periodos': analytics.PERIODOS,
+        'periodo_actual': periodo,
+        'resumen': analytics.resumen_periodo(desde, hasta),
+        'categorias_gasto': categorias_gasto,
+        'categorias_gasto_json': categorias_gasto_json,
+        'categorias_gasto_chart_height': max(180, 40 * len(categorias_gasto) + 40),
+        'reparaciones': analytics.reparaciones_mas_frecuentes(desde, hasta),
+        'marcas': analytics.marcas_mas_frecuentes(desde, hasta),
+        'tabs': tabs,
+        'tab_default': tab_default,
+    })
+
 
 MESES_ABREV = {
     1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun',
@@ -298,36 +503,24 @@ def balance(request):
         row['categoria']: row['total'] for row in analytics.gastos_por_categoria(anio, mes)
     }
     categorias = []
-    for value, label in Gasto.Categoria.choices:
-        total = totales_por_categoria.get(value, Decimal('0'))
+    for cat in CategoriaGasto.objects.filter(activo=True):
+        total = totales_por_categoria.get(cat.pk, Decimal('0'))
         pct = int(round((total / gastos) * 100)) if gastos else 0
-        categorias.append({
-            'categoria': value,
-            'label': label,
-            'total': total,
-            'pct': pct,
-            'color': CATEGORIA_COLORES.get(value, '#8891a5'),
-        })
+        categorias.append({'label': cat.nombre, 'total': total, 'pct': pct, 'color': cat.color})
     categorias_json = [
         {'label': c['label'], 'total': float(c['total']), 'color': c['color']}
         for c in categorias
     ]
 
     totales_por_dispositivo = {
-        row['trabajo__categoria_dispositivo']: row['total']
+        row['trabajo__tipo_dispositivo']: row['total']
         for row in analytics.pagos_por_categoria_dispositivo(anio, mes)
     }
     categorias_dispositivo = []
-    for value, label in Trabajo.CategoriaDispositivo.choices:
-        total = totales_por_dispositivo.get(value, Decimal('0'))
+    for tipo in TipoDispositivo.objects.filter(activo=True):
+        total = totales_por_dispositivo.get(tipo.pk, Decimal('0'))
         pct = int(round((total / ingresos) * 100)) if ingresos else 0
-        categorias_dispositivo.append({
-            'categoria': value,
-            'label': label,
-            'total': total,
-            'pct': pct,
-            'color': CATEGORIA_DISPOSITIVO_COLORES.get(value, '#8891a5'),
-        })
+        categorias_dispositivo.append({'label': tipo.nombre, 'total': total, 'pct': pct, 'color': tipo.color})
     categorias_dispositivo_json = [
         {'label': c['label'], 'total': float(c['total']), 'color': c['color']}
         for c in categorias_dispositivo
@@ -371,6 +564,112 @@ def balance(request):
     }
 
     return render(request, 'taller/balance.html', context)
+
+
+CATALOGOS = {
+    'tipo_dispositivo': {'model': TipoDispositivo, 'form': TipoDispositivoForm, 'label': 'Tipos de dispositivo'},
+    'categoria_gasto': {'model': CategoriaGasto, 'form': CategoriaGastoForm, 'label': 'Categorías de gasto'},
+    'subcategoria_gasto': {
+        'model': SubcategoriaGasto, 'form': SubcategoriaGastoForm, 'label': 'Subcategorías de gasto',
+        'select_related': ['categoria'],
+    },
+    'tipo_repuesto': {
+        'model': TipoRepuesto, 'form': TipoRepuestoForm, 'label': 'Tipos de repuesto',
+        'select_related': ['tipo_dispositivo'],
+    },
+    'marca': {
+        'model': Marca, 'form': MarcaForm, 'label': 'Marcas',
+        'select_related': ['tipo_dispositivo'],
+    },
+    'modelo': {
+        'model': Modelo, 'form': ModeloForm, 'label': 'Modelos',
+        'select_related': ['marca'],
+    },
+    'proveedor': {'model': Proveedor, 'form': ProveedorForm, 'label': 'Proveedores'},
+    'tipo_reparacion': {
+        'model': TipoReparacion, 'form': TipoReparacionForm, 'label': 'Tipos de reparación',
+        'select_related': ['tipo_dispositivo'],
+    },
+    'tercero': {'model': Tercero, 'form': TerceroForm, 'label': 'Terceros'},
+}
+ORDEN_TABS = [
+    'tipo_dispositivo', 'categoria_gasto', 'subcategoria_gasto',
+    'tipo_repuesto', 'marca', 'modelo', 'proveedor',
+    'tipo_reparacion', 'tercero',
+]
+
+
+def configuracion(request, tab='tipo_dispositivo', pk=None):
+    if tab not in CATALOGOS:
+        return redirect('taller:configuracion')
+
+    info = CATALOGOS[tab]
+    FormClass = info['form']
+    Modelo_ = info['model']
+
+    instancia = get_object_or_404(Modelo_, pk=pk) if pk else None
+
+    if request.method == 'POST':
+        form = FormClass(request.POST, instance=instancia)
+        if form.is_valid():
+            form.save()
+            return redirect('taller:configuracion_tab', tab=tab)
+    else:
+        form = FormClass(instance=instancia)
+
+    items = Modelo_.objects.select_related(*info.get('select_related', [])).all()
+
+    return render(request, 'taller/configuracion.html', {
+        'tabs': [(clave, CATALOGOS[clave]['label']) for clave in ORDEN_TABS],
+        'tab_actual': tab,
+        'label_actual': info['label'],
+        'form': form,
+        'editando': instancia,
+        'items': items,
+    })
+
+
+@require_POST
+def catalogo_toggle_activo(request, tab, pk):
+    if tab not in CATALOGOS:
+        return redirect('taller:configuracion')
+    obj = get_object_or_404(CATALOGOS[tab]['model'], pk=pk)
+    obj.activo = not obj.activo
+    obj.save(update_fields=['activo'])
+    return redirect('taller:configuracion_tab', tab=tab)
+
+
+@require_POST
+def catalogo_crear_rapido(request, tipo):
+    """Crea un ítem de catálogo desde el botón '+' de un formulario, sin
+    salir de la página (marca/modelo/proveedor nuevos). Devuelve JSON
+    {id, nombre} para que el JS lo agregue al <select> correspondiente."""
+    nombre = request.POST.get('nombre', '').strip()
+    if not nombre:
+        return JsonResponse({'error': 'Falta el nombre.'}, status=400)
+
+    if tipo == 'marca':
+        tipo_dispositivo_id = request.POST.get('tipo_dispositivo')
+        if not tipo_dispositivo_id:
+            return JsonResponse({'error': 'Elegí primero el tipo de dispositivo.'}, status=400)
+        tipo_dispositivo = get_object_or_404(TipoDispositivo, pk=tipo_dispositivo_id)
+        obj, _ = Marca.objects.get_or_create(nombre=nombre, tipo_dispositivo=tipo_dispositivo)
+    elif tipo == 'modelo':
+        marca_id = request.POST.get('marca')
+        if not marca_id:
+            return JsonResponse({'error': 'Elegí primero la marca.'}, status=400)
+        marca = get_object_or_404(Marca, pk=marca_id)
+        obj, _ = Modelo.objects.get_or_create(nombre=nombre, marca=marca)
+    elif tipo == 'proveedor':
+        telefono = request.POST.get('telefono', '').strip()
+        obj, _ = Proveedor.objects.get_or_create(nombre=nombre, defaults={'telefono': telefono})
+    elif tipo == 'tercero':
+        telefono = request.POST.get('telefono', '').strip()
+        obj, _ = Tercero.objects.get_or_create(nombre=nombre, defaults={'telefono': telefono})
+    else:
+        return JsonResponse({'error': 'Tipo inválido.'}, status=400)
+
+    return JsonResponse({'id': obj.pk, 'nombre': obj.nombre})
 
 
 def _elegir_carpeta(request):
@@ -437,10 +736,16 @@ def _construir_excel():
     ws_trabajos = wb.active
     ws_trabajos.title = 'Trabajos'
     ws_trabajos.append([
-        'Cliente', 'Teléfono', 'Categoría', 'Subtipo', 'Problema', 'Estado',
-        'Precio', 'Fecha ingreso', 'Fecha entrega', 'Total pagado', 'Estado de pago',
+        'Número', 'Cliente', 'Teléfono', 'Tipo de dispositivo', 'Marca', 'Modelo',
+        'Tipo de reparación', 'Problema', 'Detalle', 'Estado', 'Precio',
+        'Fecha ingreso', 'Fecha entrega', 'Total pagado', 'Estado de pago',
+        'Costo repuestos', 'Tercero', 'Monto tercerizado', 'Ganancia',
     ])
-    trabajos = Trabajo.objects.select_related('cliente').prefetch_related('pagos').all()
+    trabajos = (
+        Trabajo.objects.select_related(
+            'cliente', 'tipo_dispositivo', 'marca', 'modelo', 'tipo_reparacion', 'tercero',
+        ).prefetch_related('pagos', 'repuestos_usados__gasto').all()
+    )
     for t in trabajos:
         pagos = list(t.pagos.all())
         total_pagado = sum((p.monto for p in pagos), Decimal('0'))
@@ -453,35 +758,59 @@ def _construir_excel():
         else:
             estado_pago = '—'
         ws_trabajos.append([
+            t.numero,
             t.cliente.nombre,
             t.cliente.telefono,
-            t.get_categoria_dispositivo_display(),
-            t.get_subtipo_dispositivo_display() or '—',
+            t.tipo_dispositivo.nombre,
+            t.marca.nombre if t.marca else '—',
+            t.modelo.nombre if t.modelo else '—',
+            t.tipo_reparacion.nombre if t.tipo_reparacion else '—',
             t.descripcion_problema,
+            t.detalle or '—',
             t.get_estado_display(),
             moneda(t.precio_acordado),
             fecha_fmt(t.fecha_ingreso),
             fecha_fmt(t.fecha_entrega),
             moneda(total_pagado),
             estado_pago,
+            moneda(t.costo_repuestos()),
+            t.tercero.nombre if t.tercero else '—',
+            moneda(t.tercerizado_monto) if t.tercerizado_monto is not None else '—',
+            moneda(t.ganancia) if t.ganancia is not None else '—',
         ])
 
     ws_gastos = wb.create_sheet('Gastos')
-    ws_gastos.append(['Descripción', 'Proveedor', 'Categoría', 'Monto', 'Fecha'])
-    for g in Gasto.objects.all():
+    ws_gastos.append([
+        'Número', 'Fecha', 'Categoría', 'Subcategoría', 'Descripción', 'Monto',
+        'Proveedor', 'Tipo de dispositivo', 'Tipo de repuesto', 'Marca', 'Modelo',
+        'Cantidad', 'Precio unitario', 'Stock disponible',
+    ])
+    gastos = Gasto.objects.select_related(
+        'categoria', 'subcategoria', 'proveedor', 'tipo_dispositivo', 'tipo_repuesto', 'marca', 'modelo',
+    ).all()
+    for g in gastos:
         ws_gastos.append([
-            g.descripcion,
-            g.proveedor or '—',
-            g.get_categoria_display(),
-            moneda(g.monto),
+            g.numero,
             fecha_fmt(g.fecha),
+            g.categoria.nombre,
+            g.subcategoria.nombre if g.subcategoria else '—',
+            g.descripcion,
+            moneda(g.monto),
+            g.proveedor.nombre if g.proveedor else '—',
+            g.tipo_dispositivo.nombre if g.tipo_dispositivo else '—',
+            g.tipo_repuesto.nombre if g.tipo_repuesto else '—',
+            g.marca.nombre if g.marca else '—',
+            g.modelo.nombre if g.modelo else '—',
+            g.cantidad if g.cantidad is not None else '—',
+            moneda(g.precio_unitario) if g.precio_unitario is not None else '—',
+            g.stock_disponible if g.stock_disponible is not None else '—',
         ])
 
     ws_pagos = wb.create_sheet('Pagos')
     ws_pagos.append(['Número', 'Cliente', 'Monto', 'Forma de pago', 'Fecha', 'Detalle'])
     for p in Pago.objects.select_related('trabajo__cliente').all():
         ws_pagos.append([
-            f'Pago #{p.pk}',
+            p.numero,
             p.trabajo.cliente.nombre,
             moneda(p.monto),
             p.get_forma_pago_display(),

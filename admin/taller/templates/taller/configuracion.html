@@ -1,0 +1,77 @@
+{% extends 'taller/base.html' %}
+{% load taller_extras %}
+
+{% block title %}Configuración · Gestión Taller{% endblock %}
+
+{% block content %}
+<h1 class="page-title">Configuración</h1>
+
+<div class="chip-group config-tabs">
+    {% for clave, label in tabs %}
+        <a href="{% url 'taller:configuracion_tab' tab=clave %}" class="chip {% if tab_actual == clave %}active{% endif %}">{{ label }}</a>
+    {% endfor %}
+</div>
+
+<div class="gasto-page-grid">
+    <div class="form-card">
+        <h2 class="panel-title">{% if editando %}Editar{% else %}Nuevo{% endif %} · {{ label_actual }}</h2>
+        <form method="post" novalidate>
+            {% csrf_token %}
+            {% for field in form %}
+                <div class="form-group{% if field.name == 'activo' %} form-group-check{% endif %}">
+                    {% if field.name == 'activo' %}
+                        <label class="check-label">
+                            {{ field }}
+                            <span>{{ field.label }}</span>
+                        </label>
+                    {% else %}
+                        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                        {{ field }}
+                    {% endif %}
+                    {% for error in field.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+                </div>
+            {% endfor %}
+            <div class="form-actions">
+                {% if editando %}
+                    <a href="{% url 'taller:configuracion_tab' tab=tab_actual %}" class="btn btn-outline">Cancelar</a>
+                {% endif %}
+                <button type="submit" class="btn btn-primary">{% if editando %}Guardar cambios{% else %}Agregar{% endif %}</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="panel-card">
+        <h2 class="panel-title">{{ label_actual }}</h2>
+        <div class="config-items-list">
+            {% for item in items %}
+                <div class="config-item-row{% if not item.activo %} config-item-inactivo{% endif %}">
+                    <div class="config-item-info">
+                        {% if item.color %}<span class="legend-dot" style="background:{{ item.color }};"></span>{% endif %}
+                        <div>
+                            <div class="row-title">{{ item.nombre }}</div>
+                            <div class="row-subtitle">
+                                {% if item.categoria %}{{ item.categoria.nombre }}{% endif %}
+                                {% if item.tipo_dispositivo %}{{ item.tipo_dispositivo.nombre }}{% endif %}
+                                {% if item.marca %}{{ item.marca.nombre }}{% endif %}
+                                {% if item.telefono %}{{ item.telefono }}{% endif %}
+                                {% if not item.activo %}· Desactivado{% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row-actions">
+                        <a href="{% url 'taller:configuracion_editar' tab=tab_actual pk=item.pk %}" class="icon-btn" aria-label="Editar" title="Editar">
+                            {% nav_icon 'edit' %}
+                        </a>
+                        <form method="post" action="{% url 'taller:catalogo_toggle_activo' tab=tab_actual pk=item.pk %}" class="icon-form">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-sm btn-outline">{% if item.activo %}Desactivar{% else %}Activar{% endif %}</button>
+                        </form>
+                    </div>
+                </div>
+            {% empty %}
+                <div class="empty-state">Todavía no hay ítems acá.</div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}

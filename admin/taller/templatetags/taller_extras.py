@@ -15,6 +15,11 @@ _DEVICE_ICONS = {
         + '<rect x="6" y="2" width="12" height="20" rx="2"/>'
         + '<line x1="12" y1="18" x2="12.01" y2="18"/></svg>'
     ),
+    'tablet': (
+        _SVG_OPEN
+        + '<rect x="4" y="3" width="16" height="18" rx="2"/>'
+        + '<line x1="12" y1="17" x2="12.01" y2="17"/></svg>'
+    ),
     'consola': (
         _SVG_OPEN
         + '<rect x="2" y="7" width="20" height="11" rx="5.5"/>'
@@ -22,6 +27,20 @@ _DEVICE_ICONS = {
         + '<line x1="9" y1="10" x2="9" y2="14"/>'
         + '<circle cx="16" cy="10.5" r="0.9" fill="currentColor"/>'
         + '<circle cx="18" cy="13" r="0.9" fill="currentColor"/></svg>'
+    ),
+    'joystick': (
+        _SVG_OPEN
+        + '<path d="M6 9h12l2 9a2.5 2.5 0 0 1-4.5 1.5L14 17h-4l-1.5 2.5A2.5 2.5 0 0 1 4 18z"/>'
+        + '<line x1="8" y1="12" x2="8" y2="15"/>'
+        + '<line x1="6.5" y1="13.5" x2="9.5" y2="13.5"/>'
+        + '<circle cx="16" cy="12.5" r="0.9" fill="currentColor"/>'
+        + '<circle cx="18" cy="14.5" r="0.9" fill="currentColor"/></svg>'
+    ),
+    'dispositivo de audio': (
+        _SVG_OPEN
+        + '<path d="M4 15v-3a8 8 0 0 1 16 0v3"/>'
+        + '<rect x="2" y="14" width="5" height="7" rx="1.5"/>'
+        + '<rect x="17" y="14" width="5" height="7" rx="1.5"/></svg>'
     ),
     'notebook': (
         _SVG_OPEN
@@ -106,6 +125,17 @@ _NAV_ICONS = {
         + '<polyline points="7 10 12 15 17 10"/>'
         + '<line x1="12" y1="15" x2="12" y2="3"/></svg>'
     ),
+    'box': (
+        _SVG_OPEN
+        + '<path d="M21 8 12 3 3 8l9 5 9-5z"/>'
+        + '<path d="M3 8v8l9 5 9-5V8"/>'
+        + '<line x1="12" y1="13" x2="12" y2="21"/></svg>'
+    ),
+    'settings': (
+        _SVG_OPEN
+        + '<circle cx="12" cy="12" r="3"/>'
+        + '<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'
+    ),
     'table': (
         _SVG_OPEN
         + '<rect x="3" y="3" width="18" height="18" rx="2"/>'
@@ -114,12 +144,18 @@ _NAV_ICONS = {
         + '<line x1="9" y1="9" x2="9" y2="21"/>'
         + '<line x1="15" y1="9" x2="15" y2="21"/></svg>'
     ),
+    'trending-up': (
+        _SVG_OPEN
+        + '<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>'
+        + '<polyline points="17 6 23 6 23 12"/></svg>'
+    ),
 }
 
 
 @register.simple_tag
 def device_icon(tipo):
-    return mark_safe(_DEVICE_ICONS.get(tipo, ''))
+    clave = str(tipo).lower() if tipo else ''
+    return mark_safe(_DEVICE_ICONS.get(clave, _DEVICE_ICONS['otro']))
 
 
 @register.simple_tag
@@ -135,3 +171,23 @@ def moneda(value):
     signo = '-' if entero < 0 else ''
     formateado = f'{abs(entero):,}'.replace(',', '.')
     return f'{signo}${formateado}'
+
+
+@register.filter
+def gasto_repuesto_label(gasto):
+    """"G-0012 · Batería · Samsung A52 · $9.000 · quedan 3" para el
+    <select> de repuestos usados. Misma fórmula que
+    forms.RepuestoUsadoForm._gasto_label (duplicada a propósito para no
+    acoplar templatetags con forms)."""
+    if not gasto:
+        return ''
+    tipo_repuesto = gasto.tipo_repuesto.nombre if gasto.tipo_repuesto_id else '—'
+    marca_modelo = gasto.marca.nombre if gasto.marca_id else ''
+    if gasto.modelo_id:
+        marca_modelo = f'{marca_modelo} {gasto.modelo.nombre}'.strip()
+    partes = [gasto.numero, tipo_repuesto]
+    if marca_modelo:
+        partes.append(marca_modelo)
+    partes.append(moneda(gasto.precio_unitario))
+    partes.append(f'quedan {gasto.stock_disponible}')
+    return ' · '.join(partes)

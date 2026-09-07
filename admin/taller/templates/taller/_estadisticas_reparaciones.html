@@ -1,0 +1,42 @@
+{% load taller_extras %}
+<div class="panel-card">
+    <h2 class="panel-title">Reparaciones más frecuentes</h2>
+    {% if reparaciones %}
+        <div class="table-card">
+            <table class="trabajos-table sortable-table">
+                <thead>
+                    <tr>
+                        <th data-sort data-type="text">Tipo de reparación</th>
+                        <th data-sort data-type="number">Cantidad</th>
+                        <th data-sort data-type="number">Ingresos</th>
+                        <th data-sort data-type="number">Costo</th>
+                        <th data-sort data-type="number">Ganancia total</th>
+                        <th data-sort data-type="number">Ganancia prom.</th>
+                        <th data-sort data-type="number">Margen %</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in reparaciones %}
+                        <tr>
+                            <td data-value="{{ r.nombre }}">{{ r.nombre }}</td>
+                            <td data-value="{{ r.cantidad }}">{{ r.cantidad }}</td>
+                            <td data-value="{{ r.ingresos }}">{{ r.ingresos|moneda }}</td>
+                            <td data-value="{{ r.costo }}">{{ r.costo|moneda }}</td>
+                            <td data-value="{{ r.ganancia_total }}">
+                                <span class="{% if r.ganancia_total >= 0 %}ganancia-positiva{% else %}ganancia-negativa{% endif %}">{{ r.ganancia_total|moneda }}</span>
+                            </td>
+                            <td data-value="{{ r.ganancia_promedio }}">
+                                <span class="{% if r.ganancia_promedio >= 0 %}ganancia-positiva{% else %}ganancia-negativa{% endif %}">{{ r.ganancia_promedio|moneda }}</span>
+                            </td>
+                            <td data-value="{{ r.margen_pct|default_if_none:'' }}">
+                                {% if r.margen_pct is not None %}{{ r.margen_pct|floatformat:0 }}%{% else %}—{% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="empty-state">No hay trabajos en este período.</div>
+    {% endif %}
+</div>

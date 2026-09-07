@@ -1,0 +1,166 @@
+{% extends 'taller/base.html' %}
+{% load static taller_extras %}
+
+{% block title %}Estadísticas · Gestión Taller{% endblock %}
+
+{% block content %}
+<h1 class="page-title">Estadísticas</h1>
+
+<div class="chip-group periodo-selector">
+    {% for clave, label in periodos %}
+        <a href="?periodo={{ clave }}" class="chip {% if periodo_actual == clave %}active{% endif %}">{{ label }}</a>
+    {% endfor %}
+</div>
+
+<h2 class="section-title estadisticas-section-title">Resumen</h2>
+{% include 'taller/_estadisticas_resumen.html' with resumen=resumen %}
+
+<h2 class="section-title estadisticas-section-title">Gastos por categoría</h2>
+<div class="panel-card">
+    {% if categorias_gasto %}
+        <div class="chart-wrap gasto-bar-chart-wrap" style="height: {{ categorias_gasto_chart_height }}px;">
+            <canvas id="gastosCategoriaChart"></canvas>
+        </div>
+        <div class="gasto-bar-list">
+            {% for c in categorias_gasto %}
+                <details class="gasto-bar-item">
+                    <summary class="gasto-bar-summary">
+                        <span class="legend-dot" style="background:{{ c.color }};"></span>
+                        <span class="gasto-bar-label">{{ c.nombre }}</span>
+                        <span class="gasto-bar-value">{{ c.total|moneda }} · {{ c.pct }}%</span>
+                    </summary>
+                    <div class="gasto-bar-detalle">
+                        {% for d in c.detalle %}
+                            <div class="gasto-bar-detalle-row">
+                                <span>{{ d.nombre }}</span>
+                                <span>{{ d.total|moneda }} · {{ d.pct }}%</span>
+                            </div>
+                        {% empty %}
+                            <div class="gasto-bar-detalle-row gasto-bar-detalle-vacio">Sin desglose.</div>
+                        {% endfor %}
+                    </div>
+                </details>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="empty-state">No hay gastos en este período.</div>
+    {% endif %}
+</div>
+{{ categorias_gasto_json|json_script:"categorias-gasto-data" }}
+
+{% include 'taller/_estadisticas_reparaciones.html' with reparaciones=reparaciones %}
+
+{% include 'taller/_estadisticas_marcas.html' with marcas=marcas %}
+
+<h2 class="section-title estadisticas-section-title">Por dispositivo</h2>
+<div class="chip-group device-tabs">
+    {% for tab in tabs %}
+        <button type="button"
+                class="chip device-tab-btn {% if tab.tipo.pk == tab_default %}active{% endif %}"
+                data-target="device-panel-{{ tab.tipo.pk }}">{{ tab.tipo.nombre }}</button>
+    {% endfor %}
+</div>
+{% for tab in tabs %}
+    <div class="device-tab-panel" id="device-panel-{{ tab.tipo.pk }}" {% if tab.tipo.pk != tab_default %}hidden{% endif %}>
+        <h3 class="section-title">Resumen · {{ tab.tipo.nombre }}</h3>
+        {% include 'taller/_estadisticas_resumen.html' with resumen=tab.resumen %}
+        {% include 'taller/_estadisticas_reparaciones.html' with reparaciones=tab.reparaciones %}
+        {% include 'taller/_estadisticas_marcas.html' with marcas=tab.marcas %}
+        {% include 'taller/_estadisticas_repuestos.html' with repuestos=tab.repuestos %}
+    </div>
+{% empty %}
+    <div class="empty-state">No hay tipos de dispositivo configurados.</div>
+{% endfor %}
+
+<script src="{% static 'taller/js/chart.umd.min.js' %}"></script>
+<script>
+(function () {
+    if (typeof Chart === 'undefined') { return; }
+    var elCanvas = document.getElementById('gastosCategoriaChart');
+    var elData = document.getElementById('categorias-gasto-data');
+    if (!elCanvas || !elData) { return; }
+
+    var categorias = JSON.parse(elData.textContent);
+    new Chart(elCanvas, {
+        type: 'bar',
+        data: {
+            labels: categorias.map(function (c) { return c.nombre; }),
+            datasets: [{
+                data: categorias.map(function (c) { return c.total; }),
+                backgroundColor: categorias.map(function (c) { return c.color; }),
+                borderRadius: 4,
+                maxBarThickness: 28,
+            }],
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function (ctx) {
+                            return '$' + Math.round(ctx.parsed.x).toLocaleString('es-AR');
+                        },
+                    },
+                },
+            },
+            scales: {
+                x: { display: false },
+                y: { grid: { display: false }, ticks: { color: '#374151', font: { size: 12 } } },
+            },
+        },
+    });
+})();
+
+(function () {
+    var botones = document.querySelectorAll('.device-tab-btn');
+    botones.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            botones.forEach(function (b) { b.classList.remove('active'); });
+            btn.classList.add('active');
+            var target = btn.getAttribute('data-target');
+            document.querySelectorAll('.device-tab-panel').forEach(function (panel) {
+                panel.hidden = panel.id !== target;
+            });
+        });
+    });
+})();
+
+(function () {
+    function valorCelda(td) {
+        if (!td) { return null; }
+        var raw = td.getAttribute('data-value');
+        if (raw === null || raw === '') { return null; }
+        var num = parseFloat(raw);
+        return isNaN(num) ? raw.toLowerCase() : num;
+    }
+
+    document.querySelectorAll('.sortable-table').forEach(function (table) {
+        var headers = Array.prototype.slice.call(table.querySelectorAll('thead th[data-sort]'));
+        headers.forEach(function (th, colIndex) {
+            th.addEventListener('click', function () {
+                var tbody = table.querySelector('tbody');
+                var filas = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+                var asc = th.getAttribute('data-dir') !== 'asc';
+                headers.forEach(function (h) { h.removeAttribute('data-dir'); });
+                th.setAttribute('data-dir', asc ? 'asc' : 'desc');
+
+                filas.sort(function (a, b) {
+                    var va = valorCelda(a.children[colIndex]);
+                    var vb = valorCelda(b.children[colIndex]);
+                    if (va === null && vb === null) { return 0; }
+                    if (va === null) { return 1; }
+                    if (vb === null) { return -1; }
+                    if (va < vb) { return asc ? -1 : 1; }
+                    if (va > vb) { return asc ? 1 : -1; }
+                    return 0;
+                });
+                filas.forEach(function (fila) { tbody.appendChild(fila); });
+            });
+        });
+    });
+})();
+</script>
+{% endblock %}
