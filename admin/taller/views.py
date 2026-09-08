@@ -400,10 +400,54 @@ def _trabajo_resaltado_desde_request(request):
         return None
 
 
-def _pago_context(request):
+def _pago_historial_context(request, fecha_default=None):
+    """Datos de navegación por mes + historial filtrado, compartidos por
+    pago_create y pago_edit. Devuelve None si el parámetro 'mes' de la
+    URL es inválido (el caller debe redirigir a request.path en ese caso).
+
+    Si no hay 'mes' en la URL: usa fecha_default (pago_edit pasa la fecha
+    del pago que se está editando) o, si hay un ?trabajo=<id> de resaltado
+    y ese trabajo tiene pagos, el mes del pago más reciente de ese trabajo
+    — para que el trabajo resaltado sea visible sin que el usuario tenga
+    que navegar manualmente hasta su mes.
+    """
+    hoy = timezone.now().date()
+    trabajo_resaltado = _trabajo_resaltado_desde_request(request)
+
+    mes_param = request.GET.get('mes')
+    if mes_param:
+        parsed = _parse_mes_param(mes_param)
+        if parsed is None:
+            return None
+        anio, mes = parsed
+    elif fecha_default is not None:
+        anio, mes = fecha_default.year, fecha_default.month
+    elif trabajo_resaltado:
+        ultimo_pago = (
+            Pago.objects.filter(trabajo_id=trabajo_resaltado)
+            .order_by('-fecha', '-id')
+            .first()
+        )
+        anio, mes = (ultimo_pago.fecha.year, ultimo_pago.fecha.month) if ultimo_pago else (hoy.year, hoy.month)
+    else:
+        anio, mes = hoy.year, hoy.month
+
+    anio_prev, mes_prev = analytics.mes_anterior(anio, mes)
+    anio_next, mes_next = analytics.mes_siguiente(anio, mes)
+
+    pagos_mes = (
+        Pago.objects.select_related('trabajo__cliente')
+        .filter(fecha__year=anio, fecha__month=mes)
+    )
+
     return {
-        'pagos_historial': Pago.objects.select_related('trabajo__cliente').all(),
-        'trabajo_resaltado': _trabajo_resaltado_desde_request(request),
+        'mes_fecha': date(anio, mes, 1),
+        'mes_anterior_valor': f'{anio_prev:04d}-{mes_prev:02d}',
+        'mes_siguiente_valor': f'{anio_next:04d}-{mes_next:02d}',
+        'puede_avanzar': (anio, mes) < (hoy.year, hoy.month),
+        'pagos_mes': pagos_mes,
+        'total_mes': Pago.objects.total_mes(anio, mes),
+        'trabajo_resaltado': trabajo_resaltado,
     }
 
 
@@ -411,13 +455,18 @@ def pago_create(request):
     if request.method == 'POST':
         form = PagoForm(request.POST)
         if form.is_valid():
-            form.save()
-            return redirect('taller:pago_create')
+            pago = form.save()
+            mes_valor = f'{pago.fecha.year:04d}-{pago.fecha.month:02d}'
+            return redirect(f"{reverse('taller:pago_create')}?mes={mes_valor}")
     else:
         form = PagoForm(initial={'fecha': timezone.now().date()})
 
+    historial = _pago_historial_context(request)
+    if historial is None:
+        return redirect(request.path)
+
     context = {'form': form}
-    context.update(_pago_context(request))
+    context.update(historial)
     return render(request, 'taller/pago_form.html', context)
 
 
@@ -427,13 +476,18 @@ def pago_edit(request, pk):
     if request.method == 'POST':
         form = PagoForm(request.POST, instance=pago)
         if form.is_valid():
-            form.save()
-            return redirect('taller:pago_create')
+            pago = form.save()
+            mes_valor = f'{pago.fecha.year:04d}-{pago.fecha.month:02d}'
+            return redirect(f"{reverse('taller:pago_create')}?mes={mes_valor}")
     else:
         form = PagoForm(instance=pago)
 
+    historial = _pago_historial_context(request, fecha_default=pago.fecha)
+    if historial is None:
+        return redirect(request.path)
+
     context = {'form': form}
-    context.update(_pago_context(request))
+    context.update(historial)
     return render(request, 'taller/pago_form.html', context)
 
 

@@ -762,6 +762,11 @@ textarea.form-control { resize: vertical; min-height: 90px; }
 
 .gasto-history-row-activa { background: var(--accent-light); border-radius: 8px; padding-left: 10px; padding-right: 10px; margin: 0 -10px; }
 
+.gasto-history-row-extra { display: none; }
+.gasto-history-row-extra.gasto-history-row-visible { display: flex; }
+
+.gasto-history-toggle { width: 100%; justify-content: center; margin-top: 12px; }
+
 .gasto-history-desc { font-size: 0.87rem; color: var(--text-main); min-width: 0; }
 
 .gasto-history-monto { font-size: 0.87rem; font-weight: 700; color: var(--text-main); white-space: nowrap; }

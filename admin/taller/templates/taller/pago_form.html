@@ -50,7 +50,7 @@
             </div>
 
             <div class="form-actions">
-                <a href="{% url 'taller:pago_create' %}" class="btn btn-outline">Cancelar</a>
+                <a href="{% url 'taller:pago_create' %}?mes={{ mes_fecha|date:'Y-m' }}" class="btn btn-outline">Cancelar</a>
                 <button type="submit" class="btn btn-primary">{% if form.instance.pk %}Guardar cambios{% else %}Guardar pago{% endif %}</button>
             </div>
         </form>
@@ -59,12 +59,21 @@
     <div class="panel-card gasto-history-card">
         <div class="page-header-row gasto-history-header">
             <h2 class="panel-title">Historial de pagos</h2>
+            <div class="month-nav">
+                <a href="?mes={{ mes_anterior_valor }}" class="month-nav-btn" aria-label="Mes anterior">&lsaquo;</a>
+                <span class="month-nav-label">{{ mes_fecha|date:"F Y"|capfirst }}</span>
+                {% if puede_avanzar %}
+                    <a href="?mes={{ mes_siguiente_valor }}" class="month-nav-btn" aria-label="Mes siguiente">&rsaquo;</a>
+                {% else %}
+                    <span class="month-nav-btn month-nav-btn-disabled" aria-disabled="true">&rsaquo;</span>
+                {% endif %}
+            </div>
         </div>
 
-        {% if pagos_historial %}
-            <div class="gasto-history-list">
-                {% for pago in pagos_historial %}
-                    <div class="gasto-history-row{% if trabajo_resaltado and pago.trabajo_id == trabajo_resaltado %} gasto-history-row-activa{% endif %}">
+        {% if pagos_mes %}
+            <div class="gasto-history-list" id="pagos-history-list">
+                {% for pago in pagos_mes %}
+                    <div class="gasto-history-row{% if trabajo_resaltado and pago.trabajo_id == trabajo_resaltado %} gasto-history-row-activa{% endif %}{% if forloop.counter > 5 %} gasto-history-row-extra{% endif %}">
                         <div>
                             <span class="gasto-history-desc">{{ pago.numero }} · {{ pago.trabajo.cliente.nombre }}</span>
                             <div class="row-subtitle">{{ pago.get_forma_pago_display }} · {{ pago.fecha|date:"d/m/Y" }}{% if pago.detalle %} · {{ pago.detalle }}{% endif %}</div>
@@ -85,13 +94,40 @@
                     </div>
                 {% endfor %}
             </div>
+            {% if pagos_mes|length > 5 %}
+                <button type="button" id="pagos-toggle-btn" class="btn btn-outline btn-sm gasto-history-toggle">Ver más</button>
+            {% endif %}
         {% else %}
-            <div class="empty-state gasto-history-empty">Todavía no hay pagos registrados.</div>
+            <div class="empty-state gasto-history-empty">Sin pagos este mes.</div>
         {% endif %}
+
+        <div class="gasto-history-total">
+            <span>Total del mes</span>
+            <span>{{ total_mes|moneda }}</span>
+        </div>
     </div>
 </div>
 
 <script>
+(function () {
+    var toggleBtn = document.getElementById('pagos-toggle-btn');
+    if (!toggleBtn) { return; }
+    var extraRows = document.querySelectorAll('#pagos-history-list .gasto-history-row-extra');
+    var expandido = false;
+
+    function actualizar() {
+        extraRows.forEach(function (row) {
+            row.classList.toggle('gasto-history-row-visible', expandido);
+        });
+        toggleBtn.textContent = expandido ? 'Mostrar menos' : 'Ver más';
+    }
+
+    toggleBtn.addEventListener('click', function () {
+        expandido = !expandido;
+        actualizar();
+    });
+})();
+
 (function () {
     document.querySelectorAll('.pago-delete-form').forEach(function (form) {
         form.addEventListener('submit', function (event) {
