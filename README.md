@@ -1,37 +1,49 @@
 # MartinRepara
-Sistema de gestión para [MartinRepara] — reparación de celulares, joysticks, PS4 y notebooks. Panel administrativo interno (Django), pensado para uso de una sola persona.
 
-Se puede usar de dos formas: como sitio web local (`manage.py runserver`, para desarrollo) o como **app de escritorio para Windows** (un único `.exe`, sin depender de un navegador ni de tener el servidor corriendo a mano).
+Aplicación de escritorio para la gestión integral de un taller de reparación de celulares, tablets, consolas, joysticks y notebooks. Reemplaza el cuaderno y las planillas sueltas por un solo lugar donde registrar trabajos, gastos, pagos y stock, y saber qué reparaciones dejan más ganancia.
 
-## Desarrollo web
+Desarrollada a pedido de un emprendimiento real, para uso de una sola persona, sin depender de internet.
 
-```
-cd admin
-..\venv\Scripts\python.exe manage.py migrate
-..\venv\Scripts\python.exe manage.py runserver
-```
+## Funcionalidades
 
-La base se guarda en `admin\db.sqlite3` (gitignoreada). `admin\.env.example` documenta las variables de entorno para producción (`SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS`).
+**Trabajos**
+- Alta de trabajos con cliente, tipo de dispositivo, marca, modelo, problema y tipo de reparación.
+- Estados: Recibido → En reparación → Listo → Entregado, con cambio inline desde la lista.
+- Repuestos usados por trabajo (descuentan stock automáticamente).
+- Tercerización opcional: a quién se derivó, qué hizo y cuánto se le pagó (genera el gasto solo).
+- Ganancia por trabajo calculada: precio − repuestos − tercerizado.
+- Sección de entregados por mes, filtros por estado y dispositivo, búsqueda por cliente.
 
-## App de escritorio (Windows)
+**Gastos y stock**
+- Categorías y subcategorías (Repuestos, Herramientas, Membresías, Publicidad, Alquiler, Accesorios, Otro).
+- Repuestos con proveedor, tipo, marca, modelo, cantidad y precio unitario.
+- Pantalla de Stock con disponible por repuesto y total valorizado.
 
-### Generar el .exe
+**Pagos**
+- Pagos parciales o totales por trabajo, con forma de pago (efectivo, transferencia, tarjeta).
+- Indicador de pago parcial / completo en cada trabajo.
 
-Desde `admin\`, con el venv del proyecto instalado (`pip install -r requirements.txt`):
+**Balance y estadísticas**
+- Balance mensual: ingresos, gastos, resultado, variación contra el mes anterior, ingresos pendientes.
+- Evolución del balance en 6 meses, gastos por categoría, ingresos por dispositivo.
+- Estadísticas por período: reparaciones más frecuentes con margen %, ranking de marcas y modelos, repuestos más usados, y un tablero por tipo de dispositivo.
 
-```
-build.bat
-```
+**Otros**
+- Comprobantes numerados automáticamente: `T-0001` (trabajos), `G-0001` (gastos), `P-0001` (pagos).
+- Catálogos editables desde Configuración: dispositivos, categorías, marcas, modelos, tipos de reparación, proveedores.
+- Copias de seguridad automáticas al abrir y exportación manual a cualquier carpeta.
+- Exportación a Excel (trabajos, gastos y pagos).
+- Funciona completamente sin conexión.
 
-Esto corre `collectstatic` y después PyInstaller. El resultado queda en `admin\dist\MartinRepara.exe` — un único archivo, sin consola, con el ícono del logo. Para reconstruirlo después de cualquier cambio de código, volvé a correr `build.bat`.
+## Stack
 
-### Cómo funciona
+| Capa | Tecnología |
+|---|---|
+| Backend | Python 3, Django |
+| Base de datos | SQLite (archivo local) |
+| Frontend | Django templates, CSS propio, Chart.js (servido local) |
+| Ventana de escritorio | pywebview |
+| Empaquetado | PyInstaller (único `.exe` para Windows) |
+| Excel | openpyxl |
+| Tests | Django TestCase (más de 100 tests) |
 
-- `app.py` es el punto de entrada: levanta Django embebido (sin `manage.py runserver`) en un puerto libre de `127.0.0.1`, aplica `migrate` automáticamente, y abre una ventana nativa (pywebview) apuntando al Dashboard.
-- **La base de datos vive fuera del .exe**, en `%APPDATA%\MartinRepara\db.sqlite3`. Así las actualizaciones (generar un `.exe` nuevo con `build.bat`) nunca pisan los datos cargados.
-- Cada vez que se abre la app se guarda una copia de la base en `%APPDATA%\MartinRepara\backups\db_YYYY-MM-DD.sqlite3` (se conservan las últimas 30). Desde el ítem **"Copia de seguridad"** al pie del menú también se puede exportar la base a cualquier carpeta (pendrive, Drive, etc.) cuando se quiera.
-- `MartinRepara.spec` es la configuración de PyInstaller (qué se empaqueta, ícono, modo ventana sin consola). Si se agregan archivos estáticos nuevos o apps de Django nuevas, puede ser necesario ajustar la lista `datas`/`hiddenimports` ahí.
-
-### Iconos y estáticos
-
-`martinrepara.ico` se genera una vez a partir de `taller/static/taller/img/logo.jpeg` (no hace falta regenerarlo salvo que cambie el logo). Los estáticos (CSS, logo) se empaquetan desde `admin\staticfiles\`, por eso `build.bat` corre `collectstatic` antes de PyInstaller — si se edita el CSS y se corre PyInstaller solo, el `.exe` va a tener la versión vieja.
