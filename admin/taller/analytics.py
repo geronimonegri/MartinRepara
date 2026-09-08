@@ -28,6 +28,19 @@ def pagos_por_categoria_dispositivo(anio, mes):
     return Pago.objects.por_categoria_dispositivo_mes(anio, mes)
 
 
+def tercerizado_mensual(anio, mes):
+    """Gasto de categoría "Tercerizado" del mes y su porcentaje sobre el
+    total de gastos del mes (ambos por Gasto.fecha, igual que el resto de
+    Balance — no depende de fecha_ingreso ni fecha_entrega). pct queda en
+    None si no hubo gastos ese mes (no está definida la división)."""
+    monto = Gasto.objects.filter(
+        categoria__nombre='Tercerizado', fecha__year=anio, fecha__month=mes
+    ).aggregate(total=Sum('monto'))['total'] or Decimal('0')
+    gastos_total = Gasto.objects.total_mes(anio, mes)
+    pct = (monto / gastos_total * 100) if gastos_total else None
+    return {'monto': monto, 'pct': pct}
+
+
 def mes_anterior(anio, mes):
     """Año/mes inmediatamente anterior al dado (maneja el cruce de año)."""
     if mes == 1:
@@ -141,7 +154,7 @@ def rango_periodo(clave, hoy=None):
 
 
 def _trabajos_del_periodo(desde, hasta, tipo_dispositivo=None):
-    qs = Trabajo.objects.select_related('tipo_reparacion', 'marca', 'modelo').prefetch_related(
+    qs = Trabajo.objects.select_related('tipo_reparacion', 'marca', 'modelo', 'tercero').prefetch_related(
         'repuestos_usados__gasto'
     )
     if desde is not None:
@@ -239,9 +252,11 @@ def gastos_por_categoria_con_detalle(desde, hasta):
 def reparaciones_mas_frecuentes(desde, hasta, tipo_dispositivo=None, top=10):
     """Bloque 3: top de tipos de reparación por cantidad de trabajos, con
     ingresos, costo (repuestos + tercerizado), ganancia total, ganancia
-    promedio y margen %. Los trabajos sin tipo de reparación van a "Sin
-    especificar" en vez de descartarse. margen_pct queda en None cuando no
-    hubo ingresos (no está definido dividir por cero)."""
+    promedio, margen % y cuánto de ese costo fue tercerizado (para
+    comparar costo propio vs. tercerizado). Los trabajos sin tipo de
+    reparación van a "Sin especificar" en vez de descartarse. margen_pct
+    queda en None cuando no hubo ingresos (no está definido dividir por
+    cero)."""
     trabajos = _trabajos_del_periodo(desde, hasta, tipo_dispositivo)
 
     grupos = {}
@@ -250,10 +265,12 @@ def reparaciones_mas_frecuentes(desde, hasta, tipo_dispositivo=None, top=10):
         grupo = grupos.setdefault(clave, {
             'nombre': clave, 'cantidad': 0,
             'ingresos': Decimal('0'), 'costo': Decimal('0'), 'ganancia_total': Decimal('0'),
+            'tercerizado': Decimal('0'),
         })
         grupo['cantidad'] += 1
         grupo['ingresos'] += t.precio_acordado or Decimal('0')
         grupo['costo'] += t.costo_repuestos() + (t.tercerizado_monto or Decimal('0'))
+        grupo['tercerizado'] += t.tercerizado_monto or Decimal('0')
         if t.ganancia is not None:
             grupo['ganancia_total'] += t.ganancia
 
@@ -270,10 +287,95 @@ def reparaciones_mas_frecuentes(desde, hasta, tipo_dispositivo=None, top=10):
             'ganancia_total': ganancia_total,
             'ganancia_promedio': ganancia_total / cantidad if cantidad else Decimal('0'),
             'margen_pct': (ganancia_total / ingresos * 100) if ingresos else None,
+            'tercerizado': grupo['tercerizado'],
         })
 
     filas.sort(key=lambda f: f['ganancia_total'], reverse=True)
     return filas[:top]
+
+
+def tercerizacion_resumen(desde, hasta, tipo_dispositivo=None):
+    """Tarjeta "Tercerización" del bloque Resumen: monto total tercerizado,
+    su % sobre los gastos del período (el mismo valor que ya se muestra en
+    el resumen), cantidad de trabajos tercerizados y su % sobre el total
+    de trabajos del período. Ambos porcentajes quedan en None cuando el
+    denominador es 0."""
+    trabajos = _trabajos_del_periodo(desde, hasta, tipo_dispositivo)
+    tercerizados = [t for t in trabajos if t.tercerizado_monto and t.tercerizado_monto > 0]
+
+    monto_total = sum((t.tercerizado_monto for t in tercerizados), Decimal('0'))
+    gastos_total = _gastos_del_periodo(desde, hasta, tipo_dispositivo).aggregate(
+        total=Sum('monto')
+    )['total'] or Decimal('0')
+
+    return {
+        'monto': monto_total,
+        'pct_gastos': (monto_total / gastos_total * 100) if gastos_total else None,
+        'cantidad': len(tercerizados),
+        'pct_trabajos': (Decimal(len(tercerizados)) / len(trabajos) * 100) if trabajos else None,
+    }
+
+
+def tercerizacion_por_tercero(desde, hasta, tipo_dispositivo=None):
+    """Bloque Tercerización, tabla (a): por tercero, cantidad de trabajos,
+    total pagado y promedio por trabajo."""
+    trabajos = _trabajos_del_periodo(desde, hasta, tipo_dispositivo)
+
+    grupos = {}
+    for t in trabajos:
+        if not (t.tercerizado_monto and t.tercerizado_monto > 0):
+            continue
+        nombre = t.tercero.nombre if t.tercero else SIN_ESPECIFICAR
+        grupo = grupos.setdefault(t.tercero_id, {'nombre': nombre, 'cantidad': 0, 'total': Decimal('0')})
+        grupo['cantidad'] += 1
+        grupo['total'] += t.tercerizado_monto
+
+    filas = []
+    for grupo in grupos.values():
+        cantidad = grupo['cantidad']
+        filas.append({
+            'nombre': grupo['nombre'],
+            'cantidad': cantidad,
+            'total': grupo['total'],
+            'promedio': grupo['total'] / cantidad if cantidad else Decimal('0'),
+        })
+
+    filas.sort(key=lambda f: f['total'], reverse=True)
+    return filas
+
+
+def tercerizacion_por_reparacion(desde, hasta, tipo_dispositivo=None):
+    """Bloque Tercerización, tabla (b): por tipo de reparación tercerizada,
+    cantidad, total pagado al tercero y la ganancia promedio que le quedó
+    a Martín en esos trabajos (para decidir si conviene seguir
+    tercerizando o aprender a hacerlo él)."""
+    trabajos = _trabajos_del_periodo(desde, hasta, tipo_dispositivo)
+
+    grupos = {}
+    for t in trabajos:
+        if not (t.tercerizado_monto and t.tercerizado_monto > 0):
+            continue
+        nombre = t.tipo_reparacion.nombre if t.tipo_reparacion else SIN_ESPECIFICAR
+        grupo = grupos.setdefault(nombre, {
+            'nombre': nombre, 'cantidad': 0, 'total': Decimal('0'), 'ganancia': Decimal('0'),
+        })
+        grupo['cantidad'] += 1
+        grupo['total'] += t.tercerizado_monto
+        if t.ganancia is not None:
+            grupo['ganancia'] += t.ganancia
+
+    filas = []
+    for grupo in grupos.values():
+        cantidad = grupo['cantidad']
+        filas.append({
+            'nombre': grupo['nombre'],
+            'cantidad': cantidad,
+            'total': grupo['total'],
+            'ganancia_promedio': grupo['ganancia'] / cantidad if cantidad else Decimal('0'),
+        })
+
+    filas.sort(key=lambda f: f['total'], reverse=True)
+    return filas
 
 
 def marcas_mas_frecuentes(desde, hasta, tipo_dispositivo=None):

@@ -94,7 +94,7 @@ class TrabajoForm(forms.ModelForm):
         fields = [
             'tipo_dispositivo', 'marca', 'modelo', 'tipo_reparacion',
             'descripcion_problema', 'detalle', 'precio_acordado', 'fecha_ingreso',
-            'tercero', 'tercerizado_detalle', 'tercerizado_monto',
+            'fecha_entrega', 'tercero', 'tercerizado_detalle', 'tercerizado_monto',
         ]
         labels = {
             'marca': 'Marca',
@@ -104,6 +104,7 @@ class TrabajoForm(forms.ModelForm):
             'detalle': 'Detalle',
             'precio_acordado': 'Precio acordado',
             'fecha_ingreso': 'Fecha de ingreso',
+            'fecha_entrega': 'Fecha de entrega',
             'tercero': 'Tercero',
             'tercerizado_detalle': 'Detalle de tercerización',
             'tercerizado_monto': 'Monto tercerizado',
@@ -132,6 +133,10 @@ class TrabajoForm(forms.ModelForm):
                 'class': 'form-control',
                 'type': 'date',
             }),
+            'fecha_entrega': forms.DateInput(format='%Y-%m-%d', attrs={
+                'class': 'form-control',
+                'type': 'date',
+            }),
             'tercero': forms.Select(attrs={'class': 'form-control'}),
             'tercerizado_detalle': forms.TextInput(attrs={
                 'class': 'form-control', 'placeholder': 'Ej: cambio de módulo',
@@ -144,7 +149,7 @@ class TrabajoForm(forms.ModelForm):
     field_order = [
         'cliente_nombre', 'cliente_telefono', 'tipo_dispositivo', 'marca', 'modelo',
         'tipo_reparacion', 'descripcion_problema', 'detalle', 'precio_acordado', 'fecha_ingreso',
-        'tercero', 'tercerizado_detalle', 'tercerizado_monto',
+        'fecha_entrega', 'tercero', 'tercerizado_detalle', 'tercerizado_monto',
     ]
 
     def __init__(self, *args, **kwargs):
@@ -163,9 +168,27 @@ class TrabajoForm(forms.ModelForm):
         self.fields['tipo_reparacion'].required = False
         self.fields['tipo_reparacion'].empty_label = 'Elegí un tipo de reparación'
 
+        # No es un required=True fijo porque solo hace falta cuando el
+        # trabajo está Entregado (se valida en clean(), según el estado
+        # actual de la instancia: este form no permite cambiar el estado).
+        self.fields['fecha_entrega'].required = False
+
         self.fields['tercero'].queryset = Tercero.objects.filter(activo=True)
         self.fields['tercero'].required = False
         self.fields['tercero'].empty_label = 'Elegí un tercero'
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if self.instance.estado == Trabajo.Estado.ENTREGADO:
+            if not cleaned_data.get('fecha_entrega'):
+                self.add_error('fecha_entrega', 'Ingresá la fecha de entrega.')
+        else:
+            # Se limpia acá (no solo en save()): construct_instance() arma
+            # la instancia con esto ANTES de correr Trabajo.clean(), así
+            # que si quedara la fecha cargada, la validación del modelo
+            # (fecha_entrega solo con estado Entregado) la rechazaría.
+            cleaned_data['fecha_entrega'] = None
+        return cleaned_data
 
     def save(self, commit=True):
         nombre = ' '.join(self.cleaned_data['cliente_nombre'].split())
@@ -179,6 +202,11 @@ class TrabajoForm(forms.ModelForm):
 
         trabajo = super().save(commit=False)
         trabajo.cliente = cliente
+        # El estado no se edita desde este form (eso pasa en la lista de
+        # Trabajos): si no está Entregado, cualquier fecha_entrega cargada
+        # se ignora y no se guarda.
+        if trabajo.estado != Trabajo.Estado.ENTREGADO:
+            trabajo.fecha_entrega = None
         if commit:
             trabajo.save()
             _sincronizar_gasto_tercerizado(trabajo)

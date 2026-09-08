@@ -36,6 +36,11 @@
     <div class="stat-card">
         <div class="stat-label">Gastos</div>
         <div class="stat-value">{{ gastos|moneda }}</div>
+        {% if tercerizado.monto > 0 %}
+            <div class="stat-subtitle">Tercerizado: {{ tercerizado.monto|moneda }} ({{ tercerizado.pct|floatformat:0 }}% de los gastos)</div>
+        {% else %}
+            <div class="stat-subtitle">Sin tercerizaciones este mes</div>
+        {% endif %}
     </div>
     <div class="stat-card">
         <div class="stat-label">Ingresos pendientes</div>

@@ -18,11 +18,20 @@
         <form method="post" action="{% url 'taller:trabajo_estado_update' trabajo.pk %}" class="estado-form">
             {% csrf_token %}
             <input type="hidden" name="next" value="{{ request.get_full_path }}">
-            <select name="estado" class="estado-select estado-{{ trabajo.estado }}" onchange="this.form.submit()">
+            <input type="hidden" name="fecha_entrega" class="fecha-entrega-oculta" value="">
+            <select name="estado" class="estado-select estado-{{ trabajo.estado }}">
                 {% for value, label in estados %}
                     <option value="{{ value }}" {% if trabajo.estado == value %}selected{% endif %}>{{ label }}</option>
                 {% endfor %}
             </select>
+            <div class="fecha-entrega-popup" hidden>
+                <label>Fecha de entrega</label>
+                <input type="date" class="fecha-entrega-visible form-control">
+                <div class="fecha-entrega-popup-actions">
+                    <button type="button" class="btn btn-sm btn-primary fecha-entrega-confirmar">Confirmar</button>
+                    <button type="button" class="btn btn-sm btn-outline fecha-entrega-cancelar">Cancelar</button>
+                </div>
+            </div>
         </form>
         {% if trabajo.esta_pagado_calc %}
             <a href="{% url 'taller:pago_create' %}?trabajo={{ trabajo.pk }}" class="pago-info">Pagado por completo</a>

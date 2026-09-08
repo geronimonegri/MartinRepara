@@ -2,10 +2,12 @@ from datetime import date
 from decimal import Decimal
 
 from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
 from django.db import connection
 from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
+from django.utils import timezone
 
 from . import analytics
 from .forms import (
@@ -1040,3 +1042,384 @@ class RepuestosMasUsadosTests(TestCase):
 
     def test_marca_de_modelo(self):
         self.assertEqual(ModeloForm().fields['marca'].empty_label, 'Elegí una marca')
+
+
+class TrabajoFechaEntregaModeloTests(TestCase):
+    """Validación de modelo: fecha_entrega solo puede tener valor si el
+    estado es "Entregado"."""
+
+    def setUp(self):
+        self.tipo_celular = TipoDispositivo.objects.get(nombre='Celular')
+        self.cliente = Cliente.objects.create(nombre='Cliente Fecha Entrega', telefono='11-0005-0005')
+
+    def _trabajo(self, **kwargs):
+        datos = dict(
+            cliente=self.cliente, tipo_dispositivo=self.tipo_celular,
+            descripcion_problema='test', precio_acordado=Decimal('10000'),
+            fecha_ingreso=date(2026, 7, 1),
+        )
+        datos.update(kwargs)
+        return Trabajo(**datos)
+
+    def test_fecha_entrega_sin_estado_entregado_es_invalida(self):
+        trabajo = self._trabajo(estado=Trabajo.Estado.LISTO, fecha_entrega=date(2026, 7, 5))
+        with self.assertRaises(ValidationError):
+            trabajo.full_clean()
+
+    def test_fecha_entrega_con_estado_entregado_es_valida(self):
+        trabajo = self._trabajo(estado=Trabajo.Estado.ENTREGADO, fecha_entrega=date(2026, 7, 5))
+        trabajo.full_clean()  # no debe lanzar
+
+    def test_sin_fecha_entrega_es_valido_en_cualquier_estado(self):
+        trabajo = self._trabajo(estado=Trabajo.Estado.RECIBIDO, fecha_entrega=None)
+        trabajo.full_clean()  # no debe lanzar
+
+
+class TrabajoEstadoUpdateFechaEntregaTests(TestCase):
+    """Cambio de estado inline: la fecha de entrega es la que manda el
+    popup (no se autocompleta), y se limpia sola al retroceder el estado."""
+
+    def setUp(self):
+        self.tipo_celular = TipoDispositivo.objects.get(nombre='Celular')
+        cliente = Cliente.objects.create(nombre='Cliente Estado Inline', telefono='11-0006-0006')
+        self.trabajo = Trabajo.objects.create(
+            cliente=cliente, tipo_dispositivo=self.tipo_celular,
+            descripcion_problema='test', estado=Trabajo.Estado.LISTO,
+            precio_acordado=Decimal('15000'), fecha_ingreso=date(2026, 7, 1),
+        )
+
+    def test_entregado_usa_la_fecha_manual_del_popup(self):
+        self.client.post(
+            reverse('taller:trabajo_estado_update', args=[self.trabajo.pk]),
+            data={'estado': 'entregado', 'fecha_entrega': '2026-07-10'},
+        )
+        self.trabajo.refresh_from_db()
+        self.assertEqual(self.trabajo.estado, Trabajo.Estado.ENTREGADO)
+        self.assertEqual(self.trabajo.fecha_entrega, date(2026, 7, 10))
+
+    def test_entregado_sin_fecha_en_el_post_usa_hoy(self):
+        self.client.post(
+            reverse('taller:trabajo_estado_update', args=[self.trabajo.pk]),
+            data={'estado': 'entregado'},
+        )
+        self.trabajo.refresh_from_db()
+        self.assertEqual(self.trabajo.fecha_entrega, timezone.now().date())
+
+    def test_retroceder_estado_limpia_fecha_entrega(self):
+        self.trabajo.estado = Trabajo.Estado.ENTREGADO
+        self.trabajo.fecha_entrega = date(2026, 7, 10)
+        self.trabajo.save()
+
+        self.client.post(
+            reverse('taller:trabajo_estado_update', args=[self.trabajo.pk]),
+            data={'estado': 'listo'},
+        )
+        self.trabajo.refresh_from_db()
+        self.assertEqual(self.trabajo.estado, Trabajo.Estado.LISTO)
+        self.assertIsNone(self.trabajo.fecha_entrega)
+
+
+class TrabajoFormFechaEntregaTests(TestCase):
+    """TrabajoForm: fecha_entrega obligatoria solo si el trabajo ya está
+    Entregado; si no, se ignora aunque venga cargada en el POST."""
+
+    def setUp(self):
+        self.tipo_celular = TipoDispositivo.objects.get(nombre='Celular')
+        self.cliente = Cliente.objects.create(nombre='Cliente Form Entrega', telefono='11-0007-0007')
+
+    def _datos_base(self, **overrides):
+        datos = {
+            'cliente_nombre': self.cliente.nombre, 'cliente_telefono': self.cliente.telefono,
+            'tipo_dispositivo': self.tipo_celular.pk, 'descripcion_problema': 'test',
+            'precio_acordado': '15000', 'fecha_ingreso': '2026-07-01',
+        }
+        datos.update(overrides)
+        return datos
+
+    def test_entregado_sin_fecha_es_invalido(self):
+        trabajo = Trabajo.objects.create(
+            cliente=self.cliente, tipo_dispositivo=self.tipo_celular,
+            descripcion_problema='test', estado=Trabajo.Estado.ENTREGADO,
+            precio_acordado=Decimal('15000'), fecha_ingreso=date(2026, 7, 1),
+            fecha_entrega=date(2026, 7, 3),
+        )
+        form = TrabajoForm(data=self._datos_base(), instance=trabajo)
+        self.assertFalse(form.is_valid())
+        self.assertIn('fecha_entrega', form.errors)
+
+    def test_entregado_con_fecha_es_valido_y_se_guarda(self):
+        trabajo = Trabajo.objects.create(
+            cliente=self.cliente, tipo_dispositivo=self.tipo_celular,
+            descripcion_problema='test', estado=Trabajo.Estado.ENTREGADO,
+            precio_acordado=Decimal('15000'), fecha_ingreso=date(2026, 7, 1),
+            fecha_entrega=date(2026, 7, 3),
+        )
+        form = TrabajoForm(data=self._datos_base(fecha_entrega='2026-07-04'), instance=trabajo)
+        self.assertTrue(form.is_valid(), form.errors)
+        guardado = form.save()
+        self.assertEqual(guardado.fecha_entrega, date(2026, 7, 4))
+
+    def test_no_entregado_ignora_fecha_entrega_cargada(self):
+        trabajo = Trabajo.objects.create(
+            cliente=self.cliente, tipo_dispositivo=self.tipo_celular,
+            descripcion_problema='test', estado=Trabajo.Estado.LISTO,
+            precio_acordado=Decimal('15000'), fecha_ingreso=date(2026, 7, 1),
+        )
+        # Alguien manda fecha_entrega en el POST (a mano, o un campo viejo
+        # en caché) aunque el trabajo no esté Entregado: se guarda vacío.
+        form = TrabajoForm(data=self._datos_base(fecha_entrega='2026-07-04'), instance=trabajo)
+        self.assertTrue(form.is_valid(), form.errors)
+        guardado = form.save()
+        self.assertIsNone(guardado.fecha_entrega)
+
+
+class BalanceNoDependeDeFechaEntregaTests(TestCase):
+    """El Balance de un mes se calcula solo con fecha de Pago y fecha de
+    Gasto: cambiar fecha_entrega de un trabajo no debe alterarlo."""
+
+    def setUp(self):
+        self.tipo_celular = TipoDispositivo.objects.get(nombre='Celular')
+        self.cat_otro = CategoriaGasto.objects.get(nombre='Otro')
+        cliente = Cliente.objects.create(nombre='Cliente Balance Fecha', telefono='11-0008-0008')
+        self.trabajo = Trabajo.objects.create(
+            cliente=cliente, tipo_dispositivo=self.tipo_celular,
+            descripcion_problema='test', estado=Trabajo.Estado.ENTREGADO,
+            precio_acordado=Decimal('20000'), fecha_ingreso=date(2026, 7, 1),
+            fecha_entrega=date(2026, 7, 3),
+        )
+        Pago.objects.create(trabajo=self.trabajo, monto=Decimal('20000'),
+                             forma_pago=Pago.FormaPago.EFECTIVO, fecha=date(2026, 7, 3))
+        Gasto.objects.create(descripcion='Repuesto', monto=Decimal('5000'),
+                              categoria=self.cat_otro, fecha=date(2026, 7, 2))
+
+    def test_balance_del_mes_no_cambia_al_modificar_fecha_entrega(self):
+        balance_antes = analytics.balance_mensual(2026, 7)
+
+        # Cambia la fecha de entrega a otro mes por completo; el Pago y el
+        # Gasto (lo único de lo que depende Balance) no se tocan.
+        self.trabajo.fecha_entrega = date(2026, 8, 15)
+        self.trabajo.save()
+
+        balance_despues = analytics.balance_mensual(2026, 7)
+        self.assertEqual(balance_antes, balance_despues)
+        self.assertEqual(balance_antes, Decimal('15000'))  # 20000 - 5000
+
+    def test_ingresos_por_dispositivo_usa_fecha_de_pago_no_de_entrega(self):
+        # Pago cargado en julio: cuenta en julio aunque fecha_entrega
+        # apunte a agosto.
+        self.trabajo.fecha_entrega = date(2026, 8, 15)
+        self.trabajo.save()
+
+        filas_julio = list(analytics.pagos_por_categoria_dispositivo(2026, 7))
+        filas_agosto = list(analytics.pagos_por_categoria_dispositivo(2026, 8))
+        self.assertEqual(len(filas_julio), 1)
+        self.assertEqual(filas_julio[0]['total'], Decimal('20000'))
+        self.assertEqual(len(filas_agosto), 0)
+
+
+class TercerizadoMensualTests(TestCase):
+    """tercerizado_mensual (usado en la tarjeta "Gastos" de Balance): monto
+    y % sobre el total de gastos del mes, ambos por Gasto.fecha."""
+
+    def setUp(self):
+        self.tipo_celular = TipoDispositivo.objects.get(nombre='Celular')
+        self.cat_tercerizado = CategoriaGasto.objects.get(nombre='Tercerizado')
+        self.cat_otro = CategoriaGasto.objects.get(nombre='Otro')
+        self.tercero = Tercero.objects.create(nombre='Taller Test')
+        self.cliente = Cliente.objects.create(nombre='Cliente Tercerizado Mes', telefono='11-0009-0001')
+
+    def test_monto_y_pct_con_gastos_tercerizados(self):
+        Gasto.objects.create(descripcion='Otro gasto', monto=Decimal('7000'),
+                              categoria=self.cat_otro, fecha=date(2026, 7, 5))
+        Gasto.objects.create(descripcion='T-0001 · Taller Test', monto=Decimal('3000'),
+                              categoria=self.cat_tercerizado, fecha=date(2026, 7, 10))
+
+        resultado = analytics.tercerizado_mensual(2026, 7)
+        self.assertEqual(resultado['monto'], Decimal('3000'))
+        self.assertEqual(resultado['pct'], Decimal('30'))  # 3000 / 10000 * 100
+
+    def test_sin_gastos_tercerizados_monto_cero_pero_pct_definido(self):
+        Gasto.objects.create(descripcion='Otro gasto', monto=Decimal('5000'),
+                              categoria=self.cat_otro, fecha=date(2026, 7, 5))
+        resultado = analytics.tercerizado_mensual(2026, 7)
+        self.assertEqual(resultado['monto'], Decimal('0'))
+        self.assertEqual(resultado['pct'], Decimal('0'))
+
+    def test_sin_ningun_gasto_pct_es_none(self):
+        resultado = analytics.tercerizado_mensual(2026, 7)
+        self.assertEqual(resultado['monto'], Decimal('0'))
+        self.assertIsNone(resultado['pct'])
+
+
+class TercerizacionResumenTests(TestCase):
+    """tercerizacion_resumen (tarjeta del bloque Resumen de Estadísticas)."""
+
+    def setUp(self):
+        self.tipo_celular = TipoDispositivo.objects.get(nombre='Celular')
+        self.cat_otro = CategoriaGasto.objects.get(nombre='Otro')
+        self.tercero = Tercero.objects.create(nombre='Taller Test')
+        self.cliente = Cliente.objects.create(nombre='Cliente Resumen Terc', telefono='11-0009-0002')
+
+    def _trabajo(self, tercerizado_monto=None, **kwargs):
+        datos = dict(
+            cliente=self.cliente, tipo_dispositivo=self.tipo_celular,
+            descripcion_problema='test', precio_acordado=Decimal('20000'),
+            fecha_ingreso=date(2026, 7, 1), tercero=self.tercero if tercerizado_monto else None,
+            tercerizado_monto=tercerizado_monto,
+        )
+        datos.update(kwargs)
+        return Trabajo.objects.create(**datos)
+
+    def test_monto_cantidad_y_porcentajes(self):
+        self._trabajo(Decimal('3000'))
+        self._trabajo(Decimal('2000'))
+        self._trabajo(None)  # no tercerizado, cuenta para el total de trabajos
+        Gasto.objects.create(descripcion='x', monto=Decimal('5000'),
+                              categoria=self.cat_otro, fecha=date(2026, 7, 1))
+
+        resultado = analytics.tercerizacion_resumen(date(2026, 7, 1), date(2026, 7, 31))
+        self.assertEqual(resultado['monto'], Decimal('5000'))
+        self.assertEqual(resultado['cantidad'], 2)
+        self.assertEqual(resultado['pct_trabajos'], Decimal('200') / 3)  # 2/3 * 100
+        # Trabajo.objects.create() directo no pasa por _sincronizar_gasto_tercerizado,
+        # así que el único Gasto del período es el "Otro" de 5000: 5000/5000 * 100.
+        self.assertEqual(resultado['pct_gastos'], Decimal('100'))
+
+    def test_sin_trabajos_todo_en_cero_y_pct_trabajos_none(self):
+        resultado = analytics.tercerizacion_resumen(date(2026, 7, 1), date(2026, 7, 31))
+        self.assertEqual(resultado['monto'], Decimal('0'))
+        self.assertEqual(resultado['cantidad'], 0)
+        self.assertIsNone(resultado['pct_trabajos'])
+        self.assertIsNone(resultado['pct_gastos'])
+
+    def test_sin_gastos_en_el_periodo_pct_gastos_none(self):
+        # tercerizado_monto seteado a mano, sin pasar por
+        # _sincronizar_gasto_tercerizado: no se genera ningún Gasto.
+        self._trabajo(Decimal('3000'))
+        resultado = analytics.tercerizacion_resumen(date(2026, 7, 1), date(2026, 7, 31))
+        self.assertEqual(resultado['monto'], Decimal('3000'))
+        self.assertIsNone(resultado['pct_gastos'])
+
+
+class TercerizacionPorTerceroTests(TestCase):
+    """tercerizacion_por_tercero: cantidad, total y promedio por tercero."""
+
+    def setUp(self):
+        self.tipo_celular = TipoDispositivo.objects.get(nombre='Celular')
+        self.tercero_a = Tercero.objects.create(nombre='Taller A')
+        self.tercero_b = Tercero.objects.create(nombre='Taller B')
+        self.cliente = Cliente.objects.create(nombre='Cliente Por Tercero', telefono='11-0009-0003')
+
+    def _trabajo(self, tercero, monto, **kwargs):
+        datos = dict(
+            cliente=self.cliente, tipo_dispositivo=self.tipo_celular,
+            descripcion_problema='test', precio_acordado=Decimal('20000'),
+            fecha_ingreso=date(2026, 7, 1), tercero=tercero, tercerizado_monto=monto,
+        )
+        datos.update(kwargs)
+        return Trabajo.objects.create(**datos)
+
+    def test_agrupa_cantidad_total_y_promedio(self):
+        self._trabajo(self.tercero_a, Decimal('3000'))
+        self._trabajo(self.tercero_a, Decimal('5000'))
+        self._trabajo(self.tercero_b, Decimal('1000'))
+
+        filas = analytics.tercerizacion_por_tercero(date(2026, 7, 1), date(2026, 7, 31))
+        self.assertEqual(len(filas), 2)
+        # ordenado por total desc: Taller A (8000) antes que Taller B (1000)
+        self.assertEqual(filas[0]['nombre'], 'Taller A')
+        self.assertEqual(filas[0]['cantidad'], 2)
+        self.assertEqual(filas[0]['total'], Decimal('8000'))
+        self.assertEqual(filas[0]['promedio'], Decimal('4000'))
+        self.assertEqual(filas[1]['nombre'], 'Taller B')
+
+    def test_trabajos_no_tercerizados_no_se_cuentan(self):
+        self._trabajo(None, None)
+        filas = analytics.tercerizacion_por_tercero(date(2026, 7, 1), date(2026, 7, 31))
+        self.assertEqual(filas, [])
+
+    def test_sin_tercero_va_a_sin_especificar(self):
+        self._trabajo(None, Decimal('4000'))
+        filas = analytics.tercerizacion_por_tercero(date(2026, 7, 1), date(2026, 7, 31))
+        self.assertEqual(filas[0]['nombre'], analytics.SIN_ESPECIFICAR)
+
+
+class TercerizacionPorReparacionTests(TestCase):
+    """tercerizacion_por_reparacion: cantidad, total pagado al tercero y
+    ganancia promedio propia en esos trabajos."""
+
+    def setUp(self):
+        self.tipo_celular = TipoDispositivo.objects.get(nombre='Celular')
+        self.tercero = Tercero.objects.create(nombre='Taller Test')
+        self.rep_software = TipoReparacion.objects.get(nombre='Software', tipo_dispositivo=self.tipo_celular)
+        self.cliente = Cliente.objects.create(nombre='Cliente Por Reparacion', telefono='11-0009-0004')
+
+    def _trabajo(self, precio, monto, tipo_reparacion, **kwargs):
+        datos = dict(
+            cliente=self.cliente, tipo_dispositivo=self.tipo_celular,
+            tipo_reparacion=tipo_reparacion,
+            descripcion_problema='test', precio_acordado=precio,
+            fecha_ingreso=date(2026, 7, 1), tercero=self.tercero, tercerizado_monto=monto,
+        )
+        datos.update(kwargs)
+        return Trabajo.objects.create(**datos)
+
+    def test_total_y_ganancia_promedio(self):
+        self._trabajo(Decimal('20000'), Decimal('8000'), self.rep_software)
+        self._trabajo(Decimal('10000'), Decimal('4000'), self.rep_software)
+
+        filas = analytics.tercerizacion_por_reparacion(date(2026, 7, 1), date(2026, 7, 31))
+        self.assertEqual(len(filas), 1)
+        fila = filas[0]
+        self.assertEqual(fila['nombre'], 'Software')
+        self.assertEqual(fila['cantidad'], 2)
+        self.assertEqual(fila['total'], Decimal('12000'))  # 8000 + 4000
+        # ganancia: (20000-8000) + (10000-4000) = 12000 + 6000 = 18000 / 2 = 9000
+        self.assertEqual(fila['ganancia_promedio'], Decimal('9000'))
+
+    def test_sin_tipo_reparacion_va_a_sin_especificar(self):
+        self._trabajo(Decimal('15000'), Decimal('5000'), None)
+        filas = analytics.tercerizacion_por_reparacion(date(2026, 7, 1), date(2026, 7, 31))
+        self.assertEqual(filas[0]['nombre'], analytics.SIN_ESPECIFICAR)
+
+    def test_sin_tercerizados_devuelve_vacio(self):
+        self._trabajo(Decimal('15000'), None, self.rep_software, tercero=None)
+        filas = analytics.tercerizacion_por_reparacion(date(2026, 7, 1), date(2026, 7, 31))
+        self.assertEqual(filas, [])
+
+
+class ReparacionesMasFrecuentesColumnaTercerizadoTests(TestCase):
+    """La tabla de reparaciones más frecuentes suma el monto tercerizado
+    por grupo, para comparar costo propio vs. tercerizado."""
+
+    def setUp(self):
+        self.tipo_celular = TipoDispositivo.objects.get(nombre='Celular')
+        self.tercero = Tercero.objects.create(nombre='Taller Test')
+        self.rep_software = TipoReparacion.objects.get(nombre='Software', tipo_dispositivo=self.tipo_celular)
+        self.cliente = Cliente.objects.create(nombre='Cliente Col Tercerizado', telefono='11-0009-0005')
+
+    def test_suma_tercerizado_solo_de_los_tercerizados_del_grupo(self):
+        Trabajo.objects.create(
+            cliente=self.cliente, tipo_dispositivo=self.tipo_celular, tipo_reparacion=self.rep_software,
+            descripcion_problema='test', precio_acordado=Decimal('20000'),
+            fecha_ingreso=date(2026, 7, 1), tercero=self.tercero, tercerizado_monto=Decimal('8000'),
+        )
+        Trabajo.objects.create(
+            cliente=self.cliente, tipo_dispositivo=self.tipo_celular, tipo_reparacion=self.rep_software,
+            descripcion_problema='test', precio_acordado=Decimal('15000'),
+            fecha_ingreso=date(2026, 7, 2),
+        )
+
+        filas = analytics.reparaciones_mas_frecuentes(date(2026, 7, 1), date(2026, 7, 31))
+        fila = next(f for f in filas if f['nombre'] == 'Software')
+        self.assertEqual(fila['cantidad'], 2)
+        self.assertEqual(fila['tercerizado'], Decimal('8000'))
+
+    def test_tercerizado_cero_cuando_nada_se_tercerizo(self):
+        Trabajo.objects.create(
+            cliente=self.cliente, tipo_dispositivo=self.tipo_celular, tipo_reparacion=self.rep_software,
+            descripcion_problema='test', precio_acordado=Decimal('15000'),
+            fecha_ingreso=date(2026, 7, 1),
+        )
+        filas = analytics.reparaciones_mas_frecuentes(date(2026, 7, 1), date(2026, 7, 31))
+        self.assertEqual(filas[0]['tercerizado'], Decimal('0'))

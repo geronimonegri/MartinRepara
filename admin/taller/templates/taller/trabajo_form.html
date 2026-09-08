@@ -113,6 +113,14 @@
             </div>
         </div>
 
+        {% if trabajo and trabajo.estado == 'entregado' %}
+            <div class="form-group">
+                <label for="{{ form.fecha_entrega.id_for_label }}">{{ form.fecha_entrega.label }}</label>
+                {{ form.fecha_entrega }}
+                {% for error in form.fecha_entrega.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+            </div>
+        {% endif %}
+
         <div class="form-group repuestos-usados-section">
             <label>Repuestos usados</label>
             {{ formset.management_form }}

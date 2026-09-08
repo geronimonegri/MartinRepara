@@ -10,6 +10,7 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from django.views.decorators.http import require_POST
 
 from . import analytics
@@ -158,8 +159,16 @@ def trabajo_estado_update(request, pk):
 
     if nuevo_estado in Trabajo.Estado.values:
         trabajo.estado = nuevo_estado
-        if nuevo_estado == Trabajo.Estado.ENTREGADO and trabajo.fecha_entrega is None:
-            trabajo.fecha_entrega = timezone.now().date()
+        if nuevo_estado == Trabajo.Estado.ENTREGADO:
+            # La fecha la elige quien entrega (con la de hoy precargada en
+            # el popup de la lista): nunca se autocompleta acá.
+            fecha_entrega = parse_date(request.POST.get('fecha_entrega') or '')
+            trabajo.fecha_entrega = fecha_entrega or timezone.now().date()
+        else:
+            # Bug corregido: al retroceder el estado, la fecha de entrega
+            # vieja quedaba pegada y el trabajo seguía contando como
+            # "entregado" en pantallas que miran esa fecha.
+            trabajo.fecha_entrega = None
         trabajo.save()
 
     next_url = request.POST.get('next') or reverse('taller:trabajos_list')
@@ -454,6 +463,9 @@ def estadisticas(request):
             'reparaciones': analytics.reparaciones_mas_frecuentes(desde, hasta, tipo_dispositivo=tipo),
             'marcas': analytics.marcas_mas_frecuentes(desde, hasta, tipo_dispositivo=tipo),
             'repuestos': analytics.repuestos_mas_usados(desde, hasta, tipo_dispositivo=tipo),
+            'tercerizacion': analytics.tercerizacion_resumen(desde, hasta, tipo_dispositivo=tipo),
+            'tercerizacion_por_tercero': analytics.tercerizacion_por_tercero(desde, hasta, tipo_dispositivo=tipo),
+            'tercerizacion_por_reparacion': analytics.tercerizacion_por_reparacion(desde, hasta, tipo_dispositivo=tipo),
         })
     tab_default = next((t['tipo'].pk for t in tabs if t['tipo'].nombre == 'Celular'), tabs[0]['tipo'].pk if tabs else None)
 
@@ -472,6 +484,9 @@ def estadisticas(request):
         'categorias_gasto_chart_height': max(180, 40 * len(categorias_gasto) + 40),
         'reparaciones': analytics.reparaciones_mas_frecuentes(desde, hasta),
         'marcas': analytics.marcas_mas_frecuentes(desde, hasta),
+        'tercerizacion': analytics.tercerizacion_resumen(desde, hasta),
+        'tercerizacion_por_tercero': analytics.tercerizacion_por_tercero(desde, hasta),
+        'tercerizacion_por_reparacion': analytics.tercerizacion_por_reparacion(desde, hasta),
         'tabs': tabs,
         'tab_default': tab_default,
     })
@@ -498,6 +513,7 @@ def balance(request):
     ingresos = Pago.objects.total_mes(anio, mes)
     gastos = Gasto.objects.total_mes(anio, mes)
     comparacion = analytics.comparacion_mes_anterior(anio, mes)
+    tercerizado = analytics.tercerizado_mensual(anio, mes)
 
     totales_por_categoria = {
         row['categoria']: row['total'] for row in analytics.gastos_por_categoria(anio, mes)
@@ -546,6 +562,7 @@ def balance(request):
         'ingresos': ingresos,
         'gastos': gastos,
         'comparacion': comparacion,
+        'tercerizado': tercerizado,
         'categorias': categorias,
         'categorias_json': categorias_json,
         'categorias_dispositivo': categorias_dispositivo,

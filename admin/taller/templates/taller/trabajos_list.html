@@ -164,5 +164,41 @@
         });
     });
 })();
+
+(function () {
+    document.querySelectorAll('.estado-form').forEach(function (form) {
+        var select = form.querySelector('.estado-select');
+        var popup = form.querySelector('.fecha-entrega-popup');
+        var inputVisible = form.querySelector('.fecha-entrega-visible');
+        var inputOculto = form.querySelector('.fecha-entrega-oculta');
+        var valorOriginal = select.value;
+
+        select.addEventListener('change', function () {
+            if (select.value === 'entregado') {
+                var hoy = new Date().toISOString().slice(0, 10);
+                inputVisible.value = hoy;
+                popup.hidden = false;
+                inputVisible.focus();
+            } else {
+                form.submit();
+            }
+        });
+
+        form.querySelector('.fecha-entrega-confirmar').addEventListener('click', function () {
+            if (!inputVisible.value) {
+                inputVisible.focus();
+                return;
+            }
+            inputOculto.value = inputVisible.value;
+            popup.hidden = true;
+            form.submit();
+        });
+
+        form.querySelector('.fecha-entrega-cancelar').addEventListener('click', function () {
+            select.value = valorOriginal;
+            popup.hidden = true;
+        });
+    });
+})();
 </script>
 {% endblock %}

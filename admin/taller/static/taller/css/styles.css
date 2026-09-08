@@ -296,7 +296,38 @@ a { text-decoration: none; color: inherit; }
 
 .device-cell svg { width: 16px; height: 16px; color: #64748b; }
 
-.estado-form { display: inline-block; }
+.estado-form { display: inline-block; position: relative; }
+
+.fecha-entrega-popup {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    z-index: 20;
+    background: #fff;
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+    width: 200px;
+}
+
+.fecha-entrega-popup label {
+    display: block;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #334155;
+    margin-bottom: 6px;
+}
+
+.fecha-entrega-popup .form-control { width: 100%; }
+
+.fecha-entrega-popup-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.fecha-entrega-popup-actions .btn { flex: 1; padding: 7px 10px; font-size: 0.8rem; }
 
 .row-actions { display: flex; align-items: center; gap: 4px; }
 
@@ -422,7 +453,9 @@ a { text-decoration: none; color: inherit; }
     font-weight: 700;
 }
 
-.stat-row { display: flex; gap: 20px; margin-bottom: 20px; }
+.stat-row { display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 20px; }
+
+.stat-row .stat-card { min-width: 170px; }
 
 .stat-card {
     flex: 1;

@@ -24,4 +24,14 @@
             <span class="{% if resumen.ganancia_promedio >= 0 %}ganancia-positiva{% else %}ganancia-negativa{% endif %}">{{ resumen.ganancia_promedio|moneda }}</span>
         </div>
     </div>
+    <div class="stat-card">
+        <div class="stat-label">Tercerización</div>
+        <div class="stat-value">{{ tercerizacion.monto|moneda }}</div>
+        <div class="stat-subtitle">
+            {% if tercerizacion.pct_gastos is not None %}{{ tercerizacion.pct_gastos|floatformat:0 }}% de los gastos{% else %}Sin gastos en el período{% endif %}
+        </div>
+        <div class="stat-subtitle">
+            {{ tercerizacion.cantidad }} trabajo{{ tercerizacion.cantidad|pluralize }}{% if tercerizacion.pct_trabajos is not None %} ({{ tercerizacion.pct_trabajos|floatformat:0 }}% del total){% endif %}
+        </div>
+    </div>
 </div>

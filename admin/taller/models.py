@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models, transaction
 from django.db.models import Sum
@@ -236,6 +237,13 @@ class Trabajo(models.Model):
         verbose_name = 'trabajo'
         verbose_name_plural = 'trabajos'
         ordering = ['-fecha_ingreso']
+
+    def clean(self):
+        super().clean()
+        if self.fecha_entrega and self.estado != self.Estado.ENTREGADO:
+            raise ValidationError({
+                'fecha_entrega': 'Solo puede tener fecha de entrega si el estado es "Entregado".',
+            })
 
     def save(self, *args, **kwargs):
         if not self.numero:

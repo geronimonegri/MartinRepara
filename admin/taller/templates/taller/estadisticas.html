@@ -13,7 +13,7 @@
 </div>
 
 <h2 class="section-title estadisticas-section-title">Resumen</h2>
-{% include 'taller/_estadisticas_resumen.html' with resumen=resumen %}
+{% include 'taller/_estadisticas_resumen.html' with resumen=resumen tercerizacion=tercerizacion %}
 
 <h2 class="section-title estadisticas-section-title">Gastos por categoría</h2>
 <div class="panel-card">
@@ -52,6 +52,9 @@
 
 {% include 'taller/_estadisticas_marcas.html' with marcas=marcas %}
 
+<h2 class="section-title estadisticas-section-title">Tercerización</h2>
+{% include 'taller/_estadisticas_tercerizacion.html' with tercerizacion_por_tercero=tercerizacion_por_tercero tercerizacion_por_reparacion=tercerizacion_por_reparacion %}
+
 <h2 class="section-title estadisticas-section-title">Por dispositivo</h2>
 <div class="chip-group device-tabs">
     {% for tab in tabs %}
@@ -63,9 +66,10 @@
 {% for tab in tabs %}
     <div class="device-tab-panel" id="device-panel-{{ tab.tipo.pk }}" {% if tab.tipo.pk != tab_default %}hidden{% endif %}>
         <h3 class="section-title">Resumen · {{ tab.tipo.nombre }}</h3>
-        {% include 'taller/_estadisticas_resumen.html' with resumen=tab.resumen %}
+        {% include 'taller/_estadisticas_resumen.html' with resumen=tab.resumen tercerizacion=tab.tercerizacion %}
         {% include 'taller/_estadisticas_reparaciones.html' with reparaciones=tab.reparaciones %}
         {% include 'taller/_estadisticas_marcas.html' with marcas=tab.marcas %}
+        {% include 'taller/_estadisticas_tercerizacion.html' with tercerizacion_por_tercero=tab.tercerizacion_por_tercero tercerizacion_por_reparacion=tab.tercerizacion_por_reparacion %}
         {% include 'taller/_estadisticas_repuestos.html' with repuestos=tab.repuestos %}
     </div>
 {% empty %}

@@ -1,0 +1,54 @@
+{% load taller_extras %}
+<div class="charts-row">
+    <div class="panel-card">
+        <h2 class="panel-title">Tercerización por tercero</h2>
+        {% if tercerizacion_por_tercero %}
+            <div class="table-card">
+                <table class="trabajos-table">
+                    <thead>
+                        <tr><th>Tercero</th><th>Cantidad</th><th>Total pagado</th><th>Promedio</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for t in tercerizacion_por_tercero %}
+                            <tr>
+                                <td>{{ t.nombre }}</td>
+                                <td>{{ t.cantidad }}</td>
+                                <td>{{ t.total|moneda }}</td>
+                                <td>{{ t.promedio|moneda }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="empty-state">No hay trabajos tercerizados en este período.</div>
+        {% endif %}
+    </div>
+
+    <div class="panel-card">
+        <h2 class="panel-title">Tercerización por tipo de reparación</h2>
+        {% if tercerizacion_por_reparacion %}
+            <div class="table-card">
+                <table class="trabajos-table">
+                    <thead>
+                        <tr><th>Tipo de reparación</th><th>Cantidad</th><th>Total pagado</th><th>Ganancia prom.</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for r in tercerizacion_por_reparacion %}
+                            <tr>
+                                <td>{{ r.nombre }}</td>
+                                <td>{{ r.cantidad }}</td>
+                                <td>{{ r.total|moneda }}</td>
+                                <td>
+                                    <span class="{% if r.ganancia_promedio >= 0 %}ganancia-positiva{% else %}ganancia-negativa{% endif %}">{{ r.ganancia_promedio|moneda }}</span>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="empty-state">No hay trabajos tercerizados en este período.</div>
+        {% endif %}
+    </div>
+</div>
