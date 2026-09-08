@@ -494,11 +494,15 @@ def pago_edit(request, pk):
 @require_POST
 def pago_delete(request, pk):
     pago = get_object_or_404(Pago, pk=pk)
+    mes_valor = f'{pago.fecha.year:04d}-{pago.fecha.month:02d}'
     # El estado de pago del trabajo (parcial/completo) no se guarda aparte:
     # sale de total_pagado()/esta_pagado(), que suman los Pago existentes
     # al vuelo. Al borrar uno, se recalcula solo la próxima vez que se lea.
     pago.delete()
-    next_url = request.POST.get('next') or reverse('taller:pago_create')
+    # 'next' (la página desde la que se borró) ya está filtrada al mes de
+    # este pago, pero se usa el mes de su fecha como resguardo por si
+    # llegara a faltar.
+    next_url = request.POST.get('next') or f"{reverse('taller:pago_create')}?mes={mes_valor}"
     return redirect(next_url)
 
 

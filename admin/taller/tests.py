@@ -153,11 +153,8 @@ class BalanceAnalyticsTests(TestCase):
 
 
 class MesFueraDeRangoTests(TestCase):
-    """?mes= fuera de 1-12 en balance/gasto_create/trabajos_list: sin 500, redirige.
-
-    pago_create ya no tiene selector de mes (el historial de pagos
-    muestra todo, sin filtrar) así que no aplica acá.
-    """
+    """?mes= fuera de 1-12 en balance/gasto_create/pago_create/trabajos_list:
+    sin 500, redirige."""
 
     def setUp(self):
         self.user = User.objects.create_user(username='martin', password='x')
@@ -173,6 +170,14 @@ class MesFueraDeRangoTests(TestCase):
 
     def test_gasto_create_mes_13_redirige(self):
         response = self.client.get(reverse('taller:gasto_create'), {'mes': '2026-13'})
+        self.assertEqual(response.status_code, 302)
+
+    def test_pago_create_mes_13_redirige(self):
+        response = self.client.get(reverse('taller:pago_create'), {'mes': '2026-13'})
+        self.assertEqual(response.status_code, 302)
+
+    def test_pago_create_mes_00_redirige(self):
+        response = self.client.get(reverse('taller:pago_create'), {'mes': '2026-00'})
         self.assertEqual(response.status_code, 302)
 
     def test_trabajos_list_mes_entregados_13_redirige(self):
@@ -690,6 +695,94 @@ class GastoTercerizadoEditarEliminarTests(TestCase):
     def test_no_aparece_en_el_select_de_categoria_de_gastos(self):
         nombres = [c.nombre for c in GastoForm().fields['categoria'].queryset]
         self.assertNotIn('Tercerizado', nombres)
+
+
+class PagoHistorialMesTests(TestCase):
+    """Historial de pagos: filtro por mes (?mes=), redirección al mes de
+    la fecha del pago guardado/editado (no al mes actual), y el
+    comportamiento de ?trabajo=ID (abre el mes correcto, y si el pago
+    resaltado queda más allá del 5° también hay que poder detectarlo
+    para expandir la lista)."""
+
+    def setUp(self):
+        self.tipo_celular = TipoDispositivo.objects.get(nombre='Celular')
+        self.cliente = Cliente.objects.create(nombre='Cliente Historial Pagos', telefono='11-0010-0001')
+
+    def _trabajo(self, precio, **kwargs):
+        datos = dict(
+            cliente=self.cliente, tipo_dispositivo=self.tipo_celular,
+            descripcion_problema='test', precio_acordado=precio,
+            fecha_ingreso=date(2026, 7, 1),
+        )
+        datos.update(kwargs)
+        return Trabajo.objects.create(**datos)
+
+    def test_filtro_por_mes_solo_trae_pagos_de_ese_mes(self):
+        trabajo_julio = self._trabajo(Decimal('5000'))
+        trabajo_agosto = self._trabajo(Decimal('5000'))
+        Pago.objects.create(trabajo=trabajo_julio, monto=Decimal('5000'),
+                             forma_pago=Pago.FormaPago.EFECTIVO, fecha=date(2026, 7, 10))
+        Pago.objects.create(trabajo=trabajo_agosto, monto=Decimal('5000'),
+                             forma_pago=Pago.FormaPago.EFECTIVO, fecha=date(2026, 8, 10))
+
+        response = self.client.get(reverse('taller:pago_create'), {'mes': '2026-07'})
+        pagos_mes = list(response.context['pagos_mes'])
+        self.assertEqual(len(pagos_mes), 1)
+        self.assertEqual(pagos_mes[0].trabajo_id, trabajo_julio.pk)
+
+    def test_redirige_al_mes_de_la_fecha_del_pago_guardado(self):
+        trabajo = self._trabajo(Decimal('8000'))
+        response = self.client.post(reverse('taller:pago_create'), data={
+            'monto': '8000', 'forma_pago': Pago.FormaPago.EFECTIVO,
+            'fecha': '2026-05-15', 'trabajo': trabajo.pk, 'detalle': '',
+        })
+        self.assertRedirects(response, f"{reverse('taller:pago_create')}?mes=2026-05")
+
+    def test_editar_redirige_al_nuevo_mes_de_la_fecha(self):
+        trabajo = self._trabajo(Decimal('8000'))
+        pago = Pago.objects.create(trabajo=trabajo, monto=Decimal('8000'),
+                                    forma_pago=Pago.FormaPago.EFECTIVO, fecha=date(2026, 7, 1))
+        response = self.client.post(reverse('taller:pago_edit', args=[pago.pk]), data={
+            'monto': '8000', 'forma_pago': Pago.FormaPago.EFECTIVO,
+            'fecha': '2026-03-20', 'trabajo': trabajo.pk, 'detalle': '',
+        })
+        self.assertRedirects(response, f"{reverse('taller:pago_create')}?mes=2026-03")
+
+    def test_eliminar_redirige_al_mes_de_la_fecha_del_pago(self):
+        trabajo = self._trabajo(Decimal('8000'))
+        pago = Pago.objects.create(trabajo=trabajo, monto=Decimal('8000'),
+                                    forma_pago=Pago.FormaPago.EFECTIVO, fecha=date(2026, 4, 12))
+        response = self.client.post(reverse('taller:pago_delete', args=[pago.pk]))
+        self.assertRedirects(response, f"{reverse('taller:pago_create')}?mes=2026-04")
+
+    def test_trabajo_resaltado_abre_el_mes_del_pago_mas_reciente(self):
+        trabajo = self._trabajo(Decimal('3000'))
+        Pago.objects.create(trabajo=trabajo, monto=Decimal('3000'),
+                             forma_pago=Pago.FormaPago.EFECTIVO, fecha=date(2026, 6, 18))
+
+        response = self.client.get(reverse('taller:pago_create'), {'trabajo': trabajo.pk})
+        self.assertEqual(response.context['mes_fecha'], date(2026, 6, 1))
+        self.assertEqual(response.context['trabajo_resaltado'], trabajo.pk)
+
+    def test_trabajo_resaltado_mas_alla_del_quinto_queda_marcado_como_extra(self):
+        trabajo_objetivo = self._trabajo(Decimal('1000'))
+        Pago.objects.create(trabajo=trabajo_objetivo, monto=Decimal('1000'),
+                             forma_pago=Pago.FormaPago.EFECTIVO, fecha=date(2026, 7, 1))
+        # 5 pagos de otros trabajos, con fecha más reciente: quedan antes
+        # que el del trabajo resaltado (orden por -fecha), empujándolo a
+        # la posición 6.
+        for i in range(5):
+            otro = self._trabajo(Decimal('1000'))
+            Pago.objects.create(trabajo=otro, monto=Decimal('1000'),
+                                 forma_pago=Pago.FormaPago.EFECTIVO, fecha=date(2026, 7, 15))
+
+        response = self.client.get(reverse('taller:pago_create'), {'trabajo': trabajo_objetivo.pk})
+        pagos_mes = list(response.context['pagos_mes'])
+        self.assertEqual(len(pagos_mes), 6)
+        self.assertEqual(pagos_mes[5].trabajo_id, trabajo_objetivo.pk)
+        # La fila combina las dos clases: resaltada (es el trabajo pedido)
+        # y "extra" (más allá del 5°, la que el JS debe des-ocultar).
+        self.assertContains(response, 'gasto-history-row-activa gasto-history-row-extra')
 
 
 class PagoEditarEliminarTests(TestCase):

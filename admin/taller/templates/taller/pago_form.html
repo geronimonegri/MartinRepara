@@ -95,7 +95,7 @@
                 {% endfor %}
             </div>
             {% if pagos_mes|length > 5 %}
-                <button type="button" id="pagos-toggle-btn" class="btn btn-outline btn-sm gasto-history-toggle">Ver más</button>
+                <button type="button" id="pagos-toggle-btn" class="btn btn-outline btn-sm gasto-history-toggle" data-restantes="{{ pagos_mes|length|add:'-5' }}">Mostrar más ({{ pagos_mes|length|add:'-5' }} restantes)</button>
             {% endif %}
         {% else %}
             <div class="empty-state gasto-history-empty">Sin pagos este mes.</div>
@@ -111,21 +111,36 @@
 <script>
 (function () {
     var toggleBtn = document.getElementById('pagos-toggle-btn');
-    if (!toggleBtn) { return; }
     var extraRows = document.querySelectorAll('#pagos-history-list .gasto-history-row-extra');
+    var restantes = toggleBtn ? toggleBtn.getAttribute('data-restantes') : 0;
     var expandido = false;
 
     function actualizar() {
         extraRows.forEach(function (row) {
             row.classList.toggle('gasto-history-row-visible', expandido);
         });
-        toggleBtn.textContent = expandido ? 'Mostrar menos' : 'Ver más';
+        if (toggleBtn) {
+            toggleBtn.textContent = expandido ? 'Mostrar menos' : 'Mostrar más (' + restantes + ' restantes)';
+        }
     }
 
-    toggleBtn.addEventListener('click', function () {
-        expandido = !expandido;
+    if (toggleBtn) {
+        toggleBtn.addEventListener('click', function () {
+            expandido = !expandido;
+            actualizar();
+        });
+    }
+
+    // Si el trabajo resaltado (?trabajo=ID desde Trabajos) tiene algún pago
+    // más allá del 5°, arranca expandido para que sea visible sin que haya
+    // que tocar "Mostrar más" a mano.
+    var hayResaltadoOculto = document.querySelector(
+        '#pagos-history-list .gasto-history-row-activa.gasto-history-row-extra'
+    );
+    if (hayResaltadoOculto) {
+        expandido = true;
         actualizar();
-    });
+    }
 })();
 
 (function () {
