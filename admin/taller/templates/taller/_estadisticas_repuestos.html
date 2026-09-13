@@ -2,22 +2,38 @@
 <div class="panel-card">
     <h2 class="panel-title">Repuestos más usados</h2>
     {% if repuestos %}
-        <div class="table-card">
-            <table class="trabajos-table">
-                <thead>
-                    <tr><th>Tipo de repuesto</th><th>Cantidad usada</th><th>Costo</th></tr>
-                </thead>
-                <tbody>
-                    {% for r in repuestos %}
-                        <tr>
-                            <td>{{ r.nombre }}</td>
-                            <td>{{ r.cantidad }}</td>
-                            <td>{{ r.costo|moneda }}</td>
-                        </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+        <div class="chart-metrica-row">
+            <div class="chip-group chart-metrica-selector" data-repuestos-metrica="{{ chart_id }}">
+                <button type="button" class="chip active" data-metrica="cantidad">Cantidad usada</button>
+                <button type="button" class="chip" data-metrica="costo">Costo</button>
+            </div>
         </div>
+        <div class="chart-wrap" style="height: {{ repuestos_chart_height }}px;">
+            <canvas id="repuestosChart-{{ chart_id }}"></canvas>
+        </div>
+        {% with data_id="repuestos-data-"|add:chart_id %}
+            {{ repuestos_json|json_script:data_id }}
+        {% endwith %}
+
+        <details class="gasto-bar-item estadisticas-tabla-colapsada">
+            <summary class="gasto-bar-summary">Ver tabla</summary>
+            <div class="table-card">
+                <table class="trabajos-table">
+                    <thead>
+                        <tr><th>Tipo de repuesto</th><th>Cantidad usada</th><th>Costo</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for r in repuestos %}
+                            <tr>
+                                <td>{{ r.nombre }}</td>
+                                <td>{{ r.cantidad }}</td>
+                                <td>{{ r.costo|moneda }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </details>
     {% else %}
         <div class="empty-state">No se usaron repuestos en este período.</div>
     {% endif %}

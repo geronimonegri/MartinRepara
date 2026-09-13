@@ -152,12 +152,40 @@
 })();
 
 (function () {
+    function mensajeBorrarTrabajo(form) {
+        var nombre = form.getAttribute('data-cliente');
+        var pagosCount = parseInt(form.getAttribute('data-pagos-count'), 10) || 0;
+        var pagosTotal = form.getAttribute('data-pagos-total');
+        var tercerizadoMonto = parseFloat(form.getAttribute('data-tercerizado-monto')) || 0;
+        var tercerizadoMontoFmt = form.getAttribute('data-tercerizado-monto-fmt');
+        var repuestosCount = parseInt(form.getAttribute('data-repuestos-count'), 10) || 0;
+
+        var mensaje = '¿Estás seguro que querés eliminar el trabajo de ' + nombre + '?';
+
+        var extras = [];
+        if (pagosCount > 0) {
+            extras.push(pagosCount + (pagosCount === 1 ? ' pago' : ' pagos') + ' (' + pagosTotal + ')');
+        }
+        if (tercerizadoMonto > 0) {
+            extras.push('el gasto tercerizado (' + tercerizadoMontoFmt + ')');
+        }
+        if (extras.length) {
+            mensaje += ' Se eliminarán también ' + extras.join(' y ') + '.';
+        }
+
+        if (repuestosCount > 0) {
+            mensaje += ' El stock de ' + repuestosCount
+                + (repuestosCount === 1 ? ' repuesto vuelve' : ' repuestos vuelven')
+                + ' a estar disponible.';
+        }
+
+        mensaje += ' Esta acción no se puede deshacer.';
+        return mensaje;
+    }
+
     document.querySelectorAll('.trabajo-delete-form').forEach(function (form) {
         form.addEventListener('submit', function (event) {
-            var nombre = form.getAttribute('data-cliente');
-            var confirmado = window.confirm(
-                '¿Estás seguro que querés eliminar el trabajo de ' + nombre + '? Esta acción no se puede deshacer.'
-            );
+            var confirmado = window.confirm(mensajeBorrarTrabajo(form));
             if (!confirmado) {
                 event.preventDefault();
             }

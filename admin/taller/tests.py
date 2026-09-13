@@ -10,6 +10,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from . import analytics
+from .templatetags.taller_extras import repuesto_usado_chip
 from .forms import (
     GastoForm,
     MarcaForm,
@@ -70,47 +71,107 @@ class TotalPagadoTests(TestCase):
         self.assertTrue(self.trabajo.esta_pagado())
 
 
-class TrabajoDeleteTests(TestCase):
-    """Un trabajo con pagos no se puede borrar: sin 500, con mensaje, sin borrarlo."""
+class TrabajoDeleteCascadaTests(TestCase):
+    """Al eliminar un Trabajo, sus Pagos y su Gasto "Tercerizado" se borran
+    con él (el trabajo es su dueño); el stock de los repuestos usados
+    vuelve al gasto de compra, que nunca se toca. Antes de esta tanda,
+    Pago.trabajo era PROTECT (bloqueaba el borrado) y Gasto.trabajo era
+    SET_NULL (dejaba el gasto tercerizado huérfano, sumando en Balance
+    para siempre sin poder borrarse)."""
 
     def setUp(self):
         self.user = User.objects.create_user(username='martin', password='x')
         self.client.force_login(self.user)
         self.tipo_consola = TipoDispositivo.objects.get(nombre='Consola')
         self.tipo_notebook = TipoDispositivo.objects.get(nombre='Notebook')
-        cliente = Cliente.objects.create(nombre='Bruno Aquino', telefono='11-2222-2222')
-        self.trabajo = Trabajo.objects.create(
-            cliente=cliente, tipo_dispositivo=self.tipo_consola,
+        self.cliente = Cliente.objects.create(nombre='Bruno Aquino', telefono='11-2222-2222')
+
+    def test_trabajo_con_pagos_se_borra_y_se_llevan_los_pagos(self):
+        trabajo = Trabajo.objects.create(
+            cliente=self.cliente, tipo_dispositivo=self.tipo_consola,
             descripcion_problema='Limpieza', estado=Trabajo.Estado.ENTREGADO,
             precio_acordado=Decimal('10000'), fecha_ingreso=date(2026, 7, 1),
             fecha_entrega=date(2026, 7, 2),
         )
-        Pago.objects.create(trabajo=self.trabajo, monto=Decimal('10000'),
-                             forma_pago=Pago.FormaPago.EFECTIVO, fecha=date(2026, 7, 2))
+        pago = Pago.objects.create(trabajo=trabajo, monto=Decimal('10000'),
+                                    forma_pago=Pago.FormaPago.EFECTIVO, fecha=date(2026, 7, 2))
 
-    def test_no_tira_500_y_no_borra(self):
         response = self.client.post(
-            reverse('taller:trabajo_delete', args=[self.trabajo.pk]), follow=True
+            reverse('taller:trabajo_delete', args=[trabajo.pk]), follow=True
         )
         self.assertEqual(response.status_code, 200)
-        self.assertTrue(Trabajo.objects.filter(pk=self.trabajo.pk).exists())
+        self.assertFalse(Trabajo.objects.filter(pk=trabajo.pk).exists())
+        self.assertFalse(Pago.objects.filter(pk=pago.pk).exists())
 
-    def test_muestra_mensaje_de_error(self):
-        response = self.client.post(
-            reverse('taller:trabajo_delete', args=[self.trabajo.pk]), follow=True
-        )
-        mensajes = [str(m) for m in response.context['messages']]
-        self.assertTrue(any('no se puede eliminar' in m for m in mensajes))
-
-    def test_trabajo_sin_pagos_si_se_puede_borrar(self):
-        cliente = Cliente.objects.create(nombre='Otro Cliente', telefono='11-3333-3333')
+    def test_trabajo_sin_nada_se_borra(self):
         trabajo_sin_pagos = Trabajo.objects.create(
-            cliente=cliente, tipo_dispositivo=self.tipo_notebook,
+            cliente=self.cliente, tipo_dispositivo=self.tipo_notebook,
             descripcion_problema='Revisión', estado=Trabajo.Estado.RECIBIDO,
             precio_acordado=Decimal('5000'), fecha_ingreso=date(2026, 7, 1),
         )
         self.client.post(reverse('taller:trabajo_delete', args=[trabajo_sin_pagos.pk]))
         self.assertFalse(Trabajo.objects.filter(pk=trabajo_sin_pagos.pk).exists())
+
+    def test_reproduce_el_caso_del_usuario_pago_repuesto_y_tercerizacion(self):
+        """Caso exacto reportado: trabajo entregado, con dos pagos, un
+        repuesto usado y tercerización. Al borrarlo no debe quedar nada
+        huérfano, el repuesto de compra sigue existiendo con su stock
+        devuelto, y el Balance del mes queda limpio."""
+        cat_repuestos = CategoriaGasto.objects.get(nombre='Repuestos')
+        tercero = Tercero.objects.create(nombre='Taller Amigo')
+
+        gasto_repuesto = Gasto.objects.create(
+            descripcion='Batería', categoria=cat_repuestos, fecha=date(2026, 7, 1),
+            cantidad=5, precio_unitario=Decimal('10000'), monto=Decimal('50000'),
+        )
+        trabajo = Trabajo.objects.create(
+            cliente=self.cliente, tipo_dispositivo=self.tipo_consola,
+            descripcion_problema='Cambio de batería', estado=Trabajo.Estado.ENTREGADO,
+            precio_acordado=Decimal('150000'), fecha_ingreso=date(2026, 7, 1),
+            fecha_entrega=date(2026, 7, 3),
+            tercero=tercero, tercerizado_detalle='mano de obra', tercerizado_monto=Decimal('50000'),
+        )
+        _sincronizar_gasto_tercerizado(trabajo)
+        RepuestoUsado.objects.create(trabajo=trabajo, gasto=gasto_repuesto, cantidad=1)
+        Pago.objects.create(trabajo=trabajo, monto=Decimal('100000'),
+                             forma_pago=Pago.FormaPago.EFECTIVO, fecha=date(2026, 7, 1))
+        Pago.objects.create(trabajo=trabajo, monto=Decimal('50000'),
+                             forma_pago=Pago.FormaPago.TRANSFERENCIA, fecha=date(2026, 7, 3))
+
+        gasto_tercerizado_id = Gasto.objects.get(trabajo=trabajo, categoria__nombre='Tercerizado').pk
+        gasto_repuesto.refresh_from_db()
+        self.assertEqual(gasto_repuesto.stock_disponible, 4)  # 5 compradas - 1 usada
+
+        self.client.post(reverse('taller:trabajo_delete', args=[trabajo.pk]))
+
+        self.assertFalse(Trabajo.objects.filter(pk=trabajo.pk).exists())
+        self.assertEqual(Pago.objects.filter(trabajo_id=trabajo.pk).count(), 0)
+        self.assertFalse(Gasto.objects.filter(pk=gasto_tercerizado_id).exists())
+        self.assertFalse(RepuestoUsado.objects.filter(trabajo_id=trabajo.pk).exists())
+
+        # el gasto de COMPRA del repuesto nunca se borra, y recupera el stock
+        gasto_repuesto.refresh_from_db()
+        self.assertEqual(gasto_repuesto.stock_disponible, 5)
+        self.assertTrue(Gasto.objects.filter(pk=gasto_repuesto.pk).exists())
+
+        # Balance de julio queda limpio: solo la compra del repuesto ($50.000
+        # de gasto), sin los pagos ($150.000) ni el gasto tercerizado ($50.000)
+        self.assertEqual(analytics.balance_mensual(2026, 7), Decimal('-50000'))
+
+
+class GastoTercerizadoHuerfanoTests(TestCase):
+    """Defensivo (no debería pasar con el vínculo en CASCADE, pero por las
+    dudas): un Gasto "Tercerizado" sin trabajo se puede borrar normal
+    desde Gastos."""
+
+    def test_se_puede_borrar_un_tercerizado_sin_trabajo(self):
+        cat_tercerizado = CategoriaGasto.objects.get(nombre='Tercerizado')
+        gasto = Gasto.objects.create(
+            descripcion='huérfano', monto=Decimal('1000'),
+            categoria=cat_tercerizado, fecha=date(2026, 7, 1), trabajo=None,
+        )
+        self.client.post(reverse('taller:gasto_delete', args=[gasto.pk]))
+        self.assertFalse(Gasto.objects.filter(pk=gasto.pk).exists())
 
 
 class BalanceAnalyticsTests(TestCase):
@@ -235,7 +296,7 @@ class MontoNegativoTests(TestCase):
     def test_gasto_monto_cero_es_valido(self):
         # 0 no es negativo: el validador es >= 0, no debe romper este caso limite.
         form = GastoForm(data={
-            'descripcion': 'x', 'monto': '0',
+            'descripcion': 'x', 'cantidad': '1', 'precio_unitario': '0',
             'categoria': self.cat_otro.pk, 'fecha': '2026-07-01',
         })
         self.assertTrue(form.is_valid(), form.errors)
@@ -382,13 +443,88 @@ class GastoRepuestoTests(TestCase):
     def test_categoria_otro_no_exige_campos_de_repuesto(self):
         form = GastoForm(data={
             'fecha': '2026-07-01', 'categoria': self.cat_otro.pk,
-            'descripcion': 'Alquiler', 'monto': '2000',
+            'descripcion': 'Alquiler', 'cantidad': '1', 'precio_unitario': '2000',
         })
         self.assertTrue(form.is_valid(), form.errors)
         gasto = form.save()
         self.assertIsNone(gasto.proveedor)
-        self.assertIsNone(gasto.cantidad)
+        self.assertEqual(gasto.monto, Decimal('2000'))
         self.assertIsNone(gasto.stock_disponible)
+
+    def test_subcategoria_se_ignora_en_repuestos_el_campo_es_tipo_de_repuesto(self):
+        # En el form, "Subcategoría" para Repuestos es visualmente el
+        # mismo campo que "Tipo de repuesto" (el select real de
+        # subcategoría queda oculto): si por algún motivo llegara un
+        # valor de subcategoría igual se descarta.
+        sub = SubcategoriaGasto.objects.filter(categoria__nombre='Herramientas').first()
+        form = GastoForm(data=self._datos_repuesto(subcategoria=sub.pk if sub else ''))
+        self.assertTrue(form.is_valid(), form.errors)
+        gasto = form.save()
+        self.assertIsNone(gasto.subcategoria)
+        self.assertEqual(gasto.tipo_repuesto, self.tipo_repuesto)
+
+
+class CantidadPrecioEnTodasLasCategoriasTests(TestCase):
+    """cantidad × precio unitario calcula el monto en cualquier categoría
+    (no solo Repuestos, default cantidad=1); el stock sigue siendo
+    exclusivo de Repuestos. Caso pedido explícitamente: un gasto de
+    Accesorios con cantidad 5."""
+
+    def setUp(self):
+        self.cat_accesorios = CategoriaGasto.objects.get(nombre='Accesorios')
+
+    def _crear_gasto_accesorios(self):
+        form = GastoForm(data={
+            'fecha': '2026-07-15', 'categoria': self.cat_accesorios.pk,
+            'descripcion': 'Fundas de silicona', 'cantidad': '5', 'precio_unitario': '2000',
+        })
+        self.assertTrue(form.is_valid(), form.errors)
+        return form.save()
+
+    def test_monto_se_calcula_y_no_hay_stock(self):
+        gasto = self._crear_gasto_accesorios()
+        self.assertEqual(gasto.monto, Decimal('10000'))  # 5 x 2000
+        self.assertIsNone(gasto.stock_disponible)
+
+    def test_cantidad_arranca_en_1_en_el_form_de_alta(self):
+        form = GastoForm()
+        self.assertEqual(form.initial.get('cantidad', form.instance.cantidad), 1)
+
+    def test_aparece_en_el_historial_del_mes(self):
+        self._crear_gasto_accesorios()
+        response = self.client.get(reverse('taller:gasto_create'), {'mes': '2026-07'})
+        self.assertContains(response, 'Fundas de silicona')
+        self.assertContains(response, '$10.000')
+
+    def test_aparece_en_el_balance_del_mes(self):
+        self._crear_gasto_accesorios()
+        self.assertEqual(Gasto.objects.total_mes(2026, 7), Decimal('10000'))
+        self.assertEqual(analytics.balance_mensual(2026, 7), Decimal('-10000'))
+
+    def test_aparece_en_el_excel_con_cantidad_y_precio(self):
+        from .views import _construir_excel
+
+        gasto = self._crear_gasto_accesorios()
+        wb = _construir_excel()
+        ws = wb['Gastos']
+        encabezados = [c.value for c in ws[1]]
+        fila = next(
+            {encabezados[i]: celda.value for i, celda in enumerate(row)}
+            for row in ws.iter_rows(min_row=2)
+            if row[0].value == gasto.numero
+        )
+        self.assertEqual(fila['Cantidad'], 5)
+        self.assertIn('2.000', fila['Precio unitario'])
+        self.assertEqual(fila['Stock disponible'], '—')
+
+
+class ConfiguracionSubcategoriasDeRepuestosTests(TestCase):
+    """La pestaña de Configuración para TipoRepuesto ahora se llama
+    "Subcategorías de repuestos" (unificación con el form de Gastos)."""
+
+    def test_label_de_la_pestana(self):
+        response = self.client.get(reverse('taller:configuracion_tab', args=['tipo_repuesto']))
+        self.assertContains(response, 'Subcategorías de repuestos')
 
 
 class RepuestoUsadoStockTests(TestCase):
@@ -1516,3 +1652,275 @@ class ReparacionesMasFrecuentesColumnaTercerizadoTests(TestCase):
         )
         filas = analytics.reparaciones_mas_frecuentes(date(2026, 7, 1), date(2026, 7, 31))
         self.assertEqual(filas[0]['tercerizado'], Decimal('0'))
+
+
+class ClienteTelefonoOpcionalTests(TestCase):
+    """Teléfono del cliente opcional: sin él, la búsqueda/reutilización de
+    Cliente se hace solo por nombre."""
+
+    def setUp(self):
+        self.tipo_celular = TipoDispositivo.objects.get(nombre='Celular')
+
+    def _datos(self, **overrides):
+        datos = {
+            'cliente_nombre': 'Nueva Persona', 'cliente_telefono': '',
+            'tipo_dispositivo': self.tipo_celular.pk,
+            'descripcion_problema': 'no prende', 'precio_acordado': '5000',
+            'fecha_ingreso': '2026-07-01',
+        }
+        datos.update(overrides)
+        return datos
+
+    def test_se_puede_crear_un_trabajo_sin_telefono(self):
+        form = TrabajoForm(data=self._datos())
+        self.assertTrue(form.is_valid(), form.errors)
+        trabajo = form.save()
+        self.assertEqual(trabajo.cliente.telefono, '')
+
+    def test_reutiliza_cliente_existente_por_nombre_aunque_tenga_telefono(self):
+        cliente = Cliente.objects.create(nombre='Nueva Persona', telefono='11-1111-1111')
+        form = TrabajoForm(data=self._datos())
+        self.assertTrue(form.is_valid(), form.errors)
+        trabajo = form.save()
+        self.assertEqual(trabajo.cliente_id, cliente.pk)
+
+    def test_con_telefono_sigue_cruzando_telefono_y_nombre_como_antes(self):
+        Cliente.objects.create(nombre='Nueva Persona', telefono='11-2222-2222')
+        form = TrabajoForm(data=self._datos(cliente_telefono='11-9999-9999'))
+        self.assertTrue(form.is_valid(), form.errors)
+        trabajo = form.save()
+        # mismo nombre, teléfono distinto -> no es el mismo cliente, se crea uno nuevo
+        self.assertEqual(trabajo.cliente.telefono, '11-9999-9999')
+        self.assertEqual(Cliente.objects.filter(nombre='Nueva Persona').count(), 2)
+
+
+class DescripcionesOpcionalesTests(TestCase):
+    """Descripción de Gasto y descripción del problema de Trabajo: opcionales."""
+
+    def setUp(self):
+        self.cat_otro = CategoriaGasto.objects.get(nombre='Otro')
+        self.tipo_celular = TipoDispositivo.objects.get(nombre='Celular')
+
+    def test_gasto_sin_descripcion_es_valido(self):
+        form = GastoForm(data={
+            'fecha': '2026-07-01', 'categoria': self.cat_otro.pk,
+            'cantidad': '1', 'precio_unitario': '2000',
+        })
+        self.assertTrue(form.is_valid(), form.errors)
+        gasto = form.save()
+        self.assertEqual(gasto.descripcion, '')
+
+    def test_trabajo_sin_descripcion_del_problema_es_valido(self):
+        form = TrabajoForm(data={
+            'cliente_nombre': 'Cliente Sin Descripcion', 'cliente_telefono': '',
+            'tipo_dispositivo': self.tipo_celular.pk,
+            'precio_acordado': '5000', 'fecha_ingreso': '2026-07-01',
+        })
+        self.assertTrue(form.is_valid(), form.errors)
+        trabajo = form.save()
+        self.assertEqual(trabajo.descripcion_problema, '')
+
+
+class DetalleEliminadoDeTrabajoTests(TestCase):
+    """El campo "Detalle" de Trabajo ya no existe (se migró al final de la
+    descripción del problema vía migración de datos)."""
+
+    def test_el_modelo_ya_no_tiene_el_campo(self):
+        self.assertNotIn('detalle', [f.name for f in Trabajo._meta.get_fields()])
+
+    def test_no_esta_en_los_campos_del_form(self):
+        self.assertNotIn('detalle', TrabajoForm().fields)
+
+
+class RepuestosUsadosChipsEnListaDeTrabajosTests(TestCase):
+    """Los repuestos usados se muestran como chips debajo de "Problema" en
+    Trabajos (activos y Entregados); si no usó ninguno, no se muestra nada."""
+
+    def setUp(self):
+        self.tipo_celular = TipoDispositivo.objects.get(nombre='Celular')
+        self.cat_repuestos = CategoriaGasto.objects.get(nombre='Repuestos')
+        self.marca_samsung = Marca.objects.get(nombre='Samsung', tipo_dispositivo=self.tipo_celular)
+        self.modelo_a52 = Modelo.objects.get_or_create(nombre='Galaxy A52', marca=self.marca_samsung)[0]
+        self.tipo_repuesto_bateria = TipoRepuesto.objects.get(nombre='Batería', tipo_dispositivo=self.tipo_celular)
+        self.cliente = Cliente.objects.create(nombre='Cliente Chips', telefono='')
+
+    def test_filtro_repuesto_usado_chip(self):
+        gasto = Gasto.objects.create(
+            descripcion='Batería', categoria=self.cat_repuestos, fecha=date(2026, 7, 1),
+            tipo_repuesto=self.tipo_repuesto_bateria, marca=self.marca_samsung, modelo=self.modelo_a52,
+            cantidad=5, precio_unitario=Decimal('1000'), monto=Decimal('5000'),
+        )
+        trabajo = Trabajo.objects.create(
+            cliente=self.cliente, tipo_dispositivo=self.tipo_celular,
+            descripcion_problema='test', precio_acordado=Decimal('10000'),
+            fecha_ingreso=date(2026, 7, 1),
+        )
+        ru = RepuestoUsado.objects.create(trabajo=trabajo, gasto=gasto, cantidad=1)
+        self.assertEqual(repuesto_usado_chip(ru), 'Batería · Samsung Galaxy A52')
+
+    def test_chip_visible_en_trabajos_activos(self):
+        gasto = Gasto.objects.create(
+            descripcion='Batería', categoria=self.cat_repuestos, fecha=date(2026, 7, 1),
+            tipo_repuesto=self.tipo_repuesto_bateria, marca=self.marca_samsung, modelo=self.modelo_a52,
+            cantidad=5, precio_unitario=Decimal('1000'), monto=Decimal('5000'),
+        )
+        trabajo = Trabajo.objects.create(
+            cliente=self.cliente, tipo_dispositivo=self.tipo_celular,
+            descripcion_problema='test', estado=Trabajo.Estado.EN_REPARACION,
+            precio_acordado=Decimal('10000'), fecha_ingreso=date(2026, 7, 1),
+        )
+        RepuestoUsado.objects.create(trabajo=trabajo, gasto=gasto, cantidad=1)
+
+        response = self.client.get(reverse('taller:trabajos_list'))
+        self.assertContains(response, 'Batería · Samsung Galaxy A52')
+
+    def test_chip_visible_en_entregados(self):
+        gasto = Gasto.objects.create(
+            descripcion='Batería', categoria=self.cat_repuestos, fecha=date(2026, 7, 1),
+            tipo_repuesto=self.tipo_repuesto_bateria, marca=self.marca_samsung, modelo=self.modelo_a52,
+            cantidad=5, precio_unitario=Decimal('1000'), monto=Decimal('5000'),
+        )
+        trabajo = Trabajo.objects.create(
+            cliente=self.cliente, tipo_dispositivo=self.tipo_celular,
+            descripcion_problema='test', estado=Trabajo.Estado.ENTREGADO,
+            precio_acordado=Decimal('10000'), fecha_ingreso=date(2026, 7, 1),
+            fecha_entrega=date(2026, 7, 2),
+        )
+        RepuestoUsado.objects.create(trabajo=trabajo, gasto=gasto, cantidad=1)
+
+        response = self.client.get(reverse('taller:trabajos_list'), {'mes_entregados': '2026-07'})
+        self.assertContains(response, 'Batería · Samsung Galaxy A52')
+
+    def test_sin_repuestos_no_muestra_nada(self):
+        Trabajo.objects.create(
+            cliente=self.cliente, tipo_dispositivo=self.tipo_celular,
+            descripcion_problema='test', estado=Trabajo.Estado.EN_REPARACION,
+            precio_acordado=Decimal('10000'), fecha_ingreso=date(2026, 7, 1),
+        )
+        response = self.client.get(reverse('taller:trabajos_list'))
+        self.assertNotContains(response, 'repuesto-chip-list')
+
+
+class EstadisticasMesEspecificoTests(TestCase):
+    """Selector de período "Mes específico": mismo control de mes que
+    Balance, y navegar con las flechas cambia el período a ese mes."""
+
+    def setUp(self):
+        self.tipo_celular = TipoDispositivo.objects.get(nombre='Celular')
+        self.cliente = Cliente.objects.create(nombre='Cliente Mes Especifico', telefono='')
+        Trabajo.objects.create(
+            cliente=self.cliente, tipo_dispositivo=self.tipo_celular,
+            descripcion_problema='en julio', precio_acordado=Decimal('5000'),
+            fecha_ingreso=date(2026, 7, 15),
+        )
+        Trabajo.objects.create(
+            cliente=self.cliente, tipo_dispositivo=self.tipo_celular,
+            descripcion_problema='en agosto', precio_acordado=Decimal('9000'),
+            fecha_ingreso=date(2026, 8, 15),
+        )
+
+    def test_rango_periodo_mes_especifico_es_el_mes_completo(self):
+        desde, hasta = analytics.rango_periodo(
+            'mes_especifico', hoy=date(2026, 9, 10), mes_especifico=(2026, 7),
+        )
+        self.assertEqual((desde, hasta), (date(2026, 7, 1), date(2026, 7, 31)))
+
+    def test_rango_periodo_mes_especifico_actual_se_corta_hoy(self):
+        desde, hasta = analytics.rango_periodo(
+            'mes_especifico', hoy=date(2026, 9, 10), mes_especifico=(2026, 9),
+        )
+        self.assertEqual((desde, hasta), (date(2026, 9, 1), date(2026, 9, 10)))
+
+    def test_vista_muestra_solo_el_mes_elegido(self):
+        response = self.client.get(
+            reverse('taller:estadisticas'), {'periodo': 'mes_especifico', 'mes': '2026-07'}
+        )
+        self.assertEqual(response.context['resumen']['trabajos_realizados'], 1)
+        self.assertEqual(response.context['resumen']['ingresos'], Decimal('5000'))
+
+    def test_navegar_con_la_flecha_cambia_de_mes(self):
+        response = self.client.get(
+            reverse('taller:estadisticas'), {'periodo': 'mes_especifico', 'mes': '2026-07'}
+        )
+        siguiente = response.context['mes_especifico_siguiente_valor']
+        self.assertEqual(siguiente, '2026-08')
+
+        response_agosto = self.client.get(
+            reverse('taller:estadisticas'), {'periodo': 'mes_especifico', 'mes': siguiente}
+        )
+        self.assertEqual(response_agosto.context['resumen']['trabajos_realizados'], 1)
+        self.assertEqual(response_agosto.context['resumen']['ingresos'], Decimal('9000'))
+
+    def test_mes_invalido_redirige(self):
+        response = self.client.get(
+            reverse('taller:estadisticas'), {'periodo': 'mes_especifico', 'mes': '2026-13'}
+        )
+        self.assertEqual(response.status_code, 302)
+
+
+class EstadisticasGraficosJsonTests(TestCase):
+    """Datos para los gráficos de "Repuestos más usados" y "Reparaciones
+    más frecuentes" (selector de métrica en el cliente, sin recargar): el
+    contexto trae listas JSON-seguras (float en vez de Decimal, margen_pct
+    puede ser None) y un chart_id único por pestaña de dispositivo."""
+
+    def setUp(self):
+        self.tipo_celular = TipoDispositivo.objects.get(nombre='Celular')
+        self.cat_repuestos = CategoriaGasto.objects.get(nombre='Repuestos')
+        self.tipo_repuesto = TipoRepuesto.objects.filter(tipo_dispositivo=self.tipo_celular).first()
+        self.rep_software = TipoReparacion.objects.get(nombre='Software', tipo_dispositivo=self.tipo_celular)
+        self.cliente = Cliente.objects.create(nombre='Cliente Graficos', telefono='')
+
+    def test_reparaciones_json_tiene_todas_las_metricas_como_float(self):
+        Trabajo.objects.create(
+            cliente=self.cliente, tipo_dispositivo=self.tipo_celular, tipo_reparacion=self.rep_software,
+            descripcion_problema='test', precio_acordado=Decimal('10000'), fecha_ingreso=date(2026, 7, 1),
+        )
+        response = self.client.get(reverse('taller:estadisticas'), {'periodo': 'mes_especifico', 'mes': '2026-07'})
+        fila = response.context['reparaciones_json'][0]
+        self.assertEqual(fila['nombre'], 'Software')
+        self.assertIsInstance(fila['ingresos'], float)
+        self.assertIsInstance(fila['ganancia_total'], float)
+        self.assertEqual(fila['ganancia_total'], 10000.0)
+
+    def test_margen_pct_none_cuando_no_hay_ingresos(self):
+        Trabajo.objects.create(
+            cliente=self.cliente, tipo_dispositivo=self.tipo_celular, tipo_reparacion=self.rep_software,
+            descripcion_problema='test', precio_acordado=None, fecha_ingreso=date(2026, 7, 1),
+        )
+        response = self.client.get(reverse('taller:estadisticas'), {'periodo': 'mes_especifico', 'mes': '2026-07'})
+        self.assertIsNone(response.context['reparaciones_json'][0]['margen_pct'])
+
+    def test_repuestos_json_tiene_costo_como_float(self):
+        gasto = Gasto.objects.create(
+            descripcion='Glass', categoria=self.cat_repuestos, fecha=date(2026, 7, 1),
+            tipo_repuesto=self.tipo_repuesto, marca=Marca.objects.filter(tipo_dispositivo=self.tipo_celular).first(),
+            cantidad=5, precio_unitario=Decimal('1000'), monto=Decimal('5000'),
+        )
+        trabajo = Trabajo.objects.create(
+            cliente=self.cliente, tipo_dispositivo=self.tipo_celular,
+            descripcion_problema='test', precio_acordado=Decimal('10000'), fecha_ingreso=date(2026, 7, 1),
+        )
+        RepuestoUsado.objects.create(trabajo=trabajo, gasto=gasto, cantidad=2)
+
+        response = self.client.get(reverse('taller:estadisticas'), {'periodo': 'mes_especifico', 'mes': '2026-07'})
+        celular_tab = next(t for t in response.context['tabs'] if t['tipo'].nombre == 'Celular')
+        self.assertEqual(celular_tab['repuestos_json'][0]['costo'], 2000.0)
+
+    def test_chart_id_es_unico_por_dispositivo(self):
+        response = self.client.get(reverse('taller:estadisticas'))
+        chart_ids = [t['chart_id'] for t in response.context['tabs']]
+        self.assertEqual(len(chart_ids), len(set(chart_ids)))
+        self.assertTrue(all(cid.startswith('device-') for cid in chart_ids))
+
+    def test_pagina_incluye_los_selectores_de_metrica(self):
+        Trabajo.objects.create(
+            cliente=self.cliente, tipo_dispositivo=self.tipo_celular, tipo_reparacion=self.rep_software,
+            descripcion_problema='test', precio_acordado=Decimal('10000'), fecha_ingreso=date(2026, 7, 1),
+        )
+        response = self.client.get(reverse('taller:estadisticas'), {'periodo': 'mes_especifico', 'mes': '2026-07'})
+        # data-reparaciones-metrica="top" solo se renderiza si el bloque
+        # tuvo datos para mostrar (dentro del {% if reparaciones %}).
+        self.assertContains(response, 'data-reparaciones-metrica="top"')
+        self.assertContains(response, 'data-metrica="margen_pct"')
+        self.assertContains(response, 'data-metrica="ganancia_total"')

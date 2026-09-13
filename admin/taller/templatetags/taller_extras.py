@@ -191,3 +191,18 @@ def gasto_repuesto_label(gasto):
     partes.append(moneda(gasto.precio_unitario))
     partes.append(f'quedan {gasto.stock_disponible}')
     return ' · '.join(partes)
+
+
+@register.filter
+def repuesto_usado_chip(repuesto_usado):
+    """"Batería · Samsung A52" para el chip debajo de "Problema" en la
+    lista de Trabajos (mismo repuesto que gasto_repuesto_label, pero sin
+    número/precio/stock — acá interesa qué se usó, no de dónde salió)."""
+    gasto = repuesto_usado.gasto
+    tipo_repuesto = gasto.tipo_repuesto.nombre if gasto.tipo_repuesto_id else 'Repuesto'
+    marca_modelo = gasto.marca.nombre if gasto.marca_id else ''
+    if gasto.modelo_id:
+        marca_modelo = f'{marca_modelo} {gasto.modelo.nombre}'.strip()
+    if marca_modelo:
+        return f'{tipo_repuesto} · {marca_modelo}'
+    return tipo_repuesto

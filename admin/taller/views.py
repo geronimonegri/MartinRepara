@@ -5,7 +5,7 @@ from pathlib import Path
 
 from django.conf import settings
 from django.contrib import messages
-from django.db.models import Count, ProtectedError
+from django.db.models import Count, Prefetch, ProtectedError
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -37,6 +37,7 @@ from .models import (
     Modelo,
     Pago,
     Proveedor,
+    RepuestoUsado,
     SubcategoriaGasto,
     Tercero,
     TipoDispositivo,
@@ -78,7 +79,9 @@ def dashboard(request):
 
 
 def _con_indicador_pago(trabajos_qs):
-    """Anota cada Trabajo con sus datos de pago ya calculados (sin N+1)."""
+    """Anota cada Trabajo con sus datos de pago/repuestos ya calculados
+    (sin N+1) — se usan tanto para el indicador de pago como para el
+    texto de confirmación al eliminar (qué se borra en cascada)."""
     trabajos = list(trabajos_qs)
     for trabajo in trabajos:
         pagos = list(trabajo.pagos.all())
@@ -87,6 +90,8 @@ def _con_indicador_pago(trabajos_qs):
             trabajo.precio_acordado is not None
             and trabajo.total_pagado_calc >= trabajo.precio_acordado
         )
+        trabajo.pagos_count_calc = len(pagos)
+        trabajo.repuestos_count_calc = len(list(trabajo.repuestos_usados.all()))
     return trabajos
 
 
@@ -95,9 +100,16 @@ def trabajos_list(request):
     estado_filter = request.GET.get('estado', '').strip()
     categoria_filter = request.GET.get('categoria', '').strip()
 
+    # Repuestos usados con su marca/modelo/tipo, para los chips debajo de
+    # "Problema" (_trabajo_row.html), sin N+1.
+    repuestos_usados_prefetch = Prefetch(
+        'repuestos_usados',
+        queryset=RepuestoUsado.objects.select_related('gasto__tipo_repuesto', 'gasto__marca', 'gasto__modelo'),
+    )
+
     trabajos = (
         Trabajo.objects.select_related('cliente', 'tipo_dispositivo', 'marca', 'modelo')
-        .prefetch_related('pagos', 'repuestos_usados__gasto')
+        .prefetch_related('pagos', repuestos_usados_prefetch)
         .exclude(estado=Trabajo.Estado.ENTREGADO)
     )
     if query:
@@ -121,7 +133,7 @@ def trabajos_list(request):
 
     entregados = (
         Trabajo.objects.select_related('cliente', 'tipo_dispositivo', 'marca', 'modelo')
-        .prefetch_related('pagos', 'repuestos_usados__gasto')
+        .prefetch_related('pagos', repuestos_usados_prefetch)
         .filter(
             estado=Trabajo.Estado.ENTREGADO,
             fecha_entrega__year=anio_e, fecha_entrega__month=mes_e,
@@ -219,14 +231,11 @@ def trabajo_edit(request, pk):
 @require_POST
 def trabajo_delete(request, pk):
     trabajo = get_object_or_404(Trabajo, pk=pk)
-    try:
-        trabajo.delete()
-    except ProtectedError:
-        messages.error(
-            request,
-            f'El trabajo de {trabajo.cliente.nombre} tiene pagos registrados '
-            'y no se puede eliminar.',
-        )
+    # El trabajo es dueño de sus pagos y de su gasto tercerizado (CASCADE):
+    # se borran junto con él. Los repuestos usados también se borran en
+    # cascada, lo que devuelve el stock al gasto de compra (señal
+    # pre_delete en RepuestoUsado) — la compra en sí nunca se toca.
+    trabajo.delete()
     return redirect('taller:trabajos_list')
 
 
@@ -250,7 +259,7 @@ def _gasto_historial_context(request):
 
     categoria_filter = request.GET.get('categoria', '').strip()
     gastos_mes = (
-        Gasto.objects.select_related('categoria', 'subcategoria')
+        Gasto.objects.select_related('categoria', 'subcategoria', 'tipo_repuesto')
         .annotate(usos_count=Count('usos'))
         .filter(fecha__year=anio, fecha__month=mes)
     )
@@ -341,7 +350,11 @@ def gasto_delete(request, pk):
     gasto = get_object_or_404(Gasto, pk=pk)
     next_url = request.POST.get('next') or reverse('taller:gasto_create')
 
-    if gasto.categoria.nombre == 'Tercerizado':
+    # Si todavía está vinculado a un trabajo, ese trabajo es su dueño (se
+    # borra junto con él, o se actualiza si cambia el monto tercerizado):
+    # no se toca desde acá. Uno sin trabajo (no debería pasar con el
+    # vínculo en CASCADE, pero por las dudas) sí se puede borrar normal.
+    if gasto.categoria.nombre == 'Tercerizado' and gasto.trabajo_id:
         messages.error(
             request,
             'Este gasto se generó automáticamente desde un trabajo tercerizado y no se puede eliminar acá.',
@@ -506,21 +519,85 @@ def pago_delete(request, pk):
     return redirect(next_url)
 
 
+def _altura_grafico_barras(cantidad_items):
+    """Alto en px para un gráfico de barras horizontales: bastante lugar
+    por ítem para que Chart.js no tenga que ocultar etiquetas del eje Y
+    por falta de espacio."""
+    return max(180, 40 * cantidad_items + 40)
+
+
+def _repuestos_a_json(repuestos):
+    """Para el gráfico de "Repuestos más usados" (cantidad/costo)."""
+    return [
+        {'nombre': r['nombre'], 'cantidad': r['cantidad'], 'costo': float(r['costo'])}
+        for r in repuestos
+    ]
+
+
+def _reparaciones_a_json(reparaciones):
+    """Para el gráfico de "Reparaciones más frecuentes" (selector de
+    métrica): margen_pct puede ser None (sin ingresos), el resto de los
+    Decimal se pasan a float para poder ir directo a JSON."""
+    return [
+        {
+            'nombre': r['nombre'],
+            'cantidad': r['cantidad'],
+            'ingresos': float(r['ingresos']),
+            'costo': float(r['costo']),
+            'ganancia_total': float(r['ganancia_total']),
+            'ganancia_promedio': float(r['ganancia_promedio']),
+            'margen_pct': float(r['margen_pct']) if r['margen_pct'] is not None else None,
+            'tercerizado': float(r['tercerizado']),
+        }
+        for r in reparaciones
+    ]
+
+
 def estadisticas(request):
     periodo = request.GET.get('periodo', analytics.PERIODO_DEFAULT)
     if periodo not in analytics.PERIODO_VALORES:
         periodo = analytics.PERIODO_DEFAULT
-    desde, hasta = analytics.rango_periodo(periodo)
+
+    hoy = timezone.now().date()
+    mes_especifico_contexto = {}
+    if periodo == 'mes_especifico':
+        mes_param = request.GET.get('mes')
+        if mes_param:
+            parsed = _parse_mes_param(mes_param)
+            if parsed is None:
+                return redirect(request.path)
+            anio_me, mes_me = parsed
+        else:
+            anio_me, mes_me = hoy.year, hoy.month
+        desde, hasta = analytics.rango_periodo(periodo, hoy=hoy, mes_especifico=(anio_me, mes_me))
+
+        anio_me_prev, mes_me_prev = analytics.mes_anterior(anio_me, mes_me)
+        anio_me_next, mes_me_next = analytics.mes_siguiente(anio_me, mes_me)
+        mes_especifico_contexto = {
+            'mes_especifico_fecha': date(anio_me, mes_me, 1),
+            'mes_especifico_anterior_valor': f'{anio_me_prev:04d}-{mes_me_prev:02d}',
+            'mes_especifico_siguiente_valor': f'{anio_me_next:04d}-{mes_me_next:02d}',
+            'puede_avanzar_especifico': (anio_me, mes_me) < (hoy.year, hoy.month),
+        }
+    else:
+        desde, hasta = analytics.rango_periodo(periodo, hoy=hoy)
 
     dispositivos = list(TipoDispositivo.objects.filter(activo=True))
     tabs = []
     for tipo in dispositivos:
+        reparaciones_tab = analytics.reparaciones_mas_frecuentes(desde, hasta, tipo_dispositivo=tipo)
+        repuestos_tab = analytics.repuestos_mas_usados(desde, hasta, tipo_dispositivo=tipo)
         tabs.append({
             'tipo': tipo,
+            'chart_id': f'device-{tipo.pk}',
             'resumen': analytics.resumen_periodo(desde, hasta, tipo_dispositivo=tipo),
-            'reparaciones': analytics.reparaciones_mas_frecuentes(desde, hasta, tipo_dispositivo=tipo),
+            'reparaciones': reparaciones_tab,
+            'reparaciones_json': _reparaciones_a_json(reparaciones_tab),
+            'reparaciones_chart_height': _altura_grafico_barras(len(reparaciones_tab)),
             'marcas': analytics.marcas_mas_frecuentes(desde, hasta, tipo_dispositivo=tipo),
-            'repuestos': analytics.repuestos_mas_usados(desde, hasta, tipo_dispositivo=tipo),
+            'repuestos': repuestos_tab,
+            'repuestos_json': _repuestos_a_json(repuestos_tab),
+            'repuestos_chart_height': _altura_grafico_barras(len(repuestos_tab)),
             'tercerizacion': analytics.tercerizacion_resumen(desde, hasta, tipo_dispositivo=tipo),
             'tercerizacion_por_tercero': analytics.tercerizacion_por_tercero(desde, hasta, tipo_dispositivo=tipo),
             'tercerizacion_por_reparacion': analytics.tercerizacion_por_reparacion(desde, hasta, tipo_dispositivo=tipo),
@@ -532,22 +609,27 @@ def estadisticas(request):
         {'nombre': c['nombre'], 'total': float(c['total']), 'color': c['color']}
         for c in categorias_gasto
     ]
+    reparaciones_top = analytics.reparaciones_mas_frecuentes(desde, hasta)
 
-    return render(request, 'taller/estadisticas.html', {
+    context = {
         'periodos': analytics.PERIODOS,
         'periodo_actual': periodo,
         'resumen': analytics.resumen_periodo(desde, hasta),
         'categorias_gasto': categorias_gasto,
         'categorias_gasto_json': categorias_gasto_json,
-        'categorias_gasto_chart_height': max(180, 40 * len(categorias_gasto) + 40),
-        'reparaciones': analytics.reparaciones_mas_frecuentes(desde, hasta),
+        'categorias_gasto_chart_height': _altura_grafico_barras(len(categorias_gasto)),
+        'reparaciones': reparaciones_top,
+        'reparaciones_json': _reparaciones_a_json(reparaciones_top),
+        'reparaciones_chart_height': _altura_grafico_barras(len(reparaciones_top)),
         'marcas': analytics.marcas_mas_frecuentes(desde, hasta),
         'tercerizacion': analytics.tercerizacion_resumen(desde, hasta),
         'tercerizacion_por_tercero': analytics.tercerizacion_por_tercero(desde, hasta),
         'tercerizacion_por_reparacion': analytics.tercerizacion_por_reparacion(desde, hasta),
         'tabs': tabs,
         'tab_default': tab_default,
-    })
+    }
+    context.update(mes_especifico_contexto)
+    return render(request, 'taller/estadisticas.html', context)
 
 
 MESES_ABREV = {
@@ -649,7 +731,7 @@ CATALOGOS = {
         'select_related': ['categoria'],
     },
     'tipo_repuesto': {
-        'model': TipoRepuesto, 'form': TipoRepuestoForm, 'label': 'Tipos de repuesto',
+        'model': TipoRepuesto, 'form': TipoRepuestoForm, 'label': 'Subcategorías de repuestos',
         'select_related': ['tipo_dispositivo'],
     },
     'marca': {
@@ -812,7 +894,7 @@ def _construir_excel():
     ws_trabajos.title = 'Trabajos'
     ws_trabajos.append([
         'Número', 'Cliente', 'Teléfono', 'Tipo de dispositivo', 'Marca', 'Modelo',
-        'Tipo de reparación', 'Problema', 'Detalle', 'Estado', 'Precio',
+        'Tipo de reparación', 'Problema', 'Estado', 'Precio',
         'Fecha ingreso', 'Fecha entrega', 'Total pagado', 'Estado de pago',
         'Costo repuestos', 'Tercero', 'Monto tercerizado', 'Ganancia',
     ])
@@ -840,8 +922,7 @@ def _construir_excel():
             t.marca.nombre if t.marca else '—',
             t.modelo.nombre if t.modelo else '—',
             t.tipo_reparacion.nombre if t.tipo_reparacion else '—',
-            t.descripcion_problema,
-            t.detalle or '—',
+            t.descripcion_problema or '—',
             t.get_estado_display(),
             moneda(t.precio_acordado),
             fecha_fmt(t.fecha_ingreso),

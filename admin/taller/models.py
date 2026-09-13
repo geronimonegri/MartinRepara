@@ -164,7 +164,7 @@ class Tercero(models.Model):
 
 class Cliente(models.Model):
     nombre = models.CharField(max_length=150)
-    telefono = models.CharField('teléfono', max_length=30)
+    telefono = models.CharField('teléfono', max_length=30, blank=True)
     email = models.EmailField('email', blank=True)
 
     class Meta:
@@ -206,8 +206,7 @@ class Trabajo(models.Model):
         TipoReparacion, verbose_name='tipo de reparación', on_delete=models.PROTECT,
         related_name='trabajos', null=True, blank=True,
     )
-    descripcion_problema = models.TextField('descripción del problema')
-    detalle = models.TextField('detalle', blank=True)
+    descripcion_problema = models.TextField('descripción del problema', blank=True)
     estado = models.CharField(
         max_length=20, choices=Estado.choices, default=Estado.RECIBIDO
     )
@@ -298,7 +297,7 @@ class GastoManager(models.Manager):
 
 class Gasto(models.Model):
     numero = models.CharField('número', max_length=20, unique=True, editable=False, blank=True)
-    descripcion = models.CharField('descripción', max_length=255)
+    descripcion = models.CharField('descripción', max_length=255, blank=True)
     monto = models.DecimalField(
         'monto', max_digits=10, decimal_places=2,
         validators=[MinValueValidator(0, message=MONTO_NEGATIVO_MSG)],
@@ -352,10 +351,13 @@ class Gasto(models.Model):
     # Solo se completa en los gastos "Tercerizado" que se generan solos
     # desde un Trabajo (ver forms._sincronizar_gasto_tercerizado). No es
     # un campo del formulario de Gastos: nunca lo carga el usuario a mano.
-    # SET_NULL (no CASCADE): si se borra el trabajo, el gasto ya generado
-    # queda (la plata ya se gastó, no desaparece del historial de Balance).
+    # CASCADE: el trabajo es el dueño de este gasto (lo crea/actualiza/
+    # borra _sincronizar_gasto_tercerizado según su propio estado), así
+    # que si se borra el trabajo este gasto se borra con él — dejarlo
+    # vivo con trabajo=NULL lo volvía un gasto huérfano que seguía
+    # sumando en Balance sin poder borrarse desde Gastos.
     trabajo = models.ForeignKey(
-        Trabajo, verbose_name='trabajo asociado', on_delete=models.SET_NULL,
+        Trabajo, verbose_name='trabajo asociado', on_delete=models.CASCADE,
         related_name='gastos_generados', null=True, blank=True,
     )
 
@@ -369,7 +371,17 @@ class Gasto(models.Model):
     def save(self, *args, **kwargs):
         if not self.numero:
             self.numero = Correlativo.siguiente_numero(Correlativo.GASTO)
-        if self.pk is None and self.cantidad is not None and self.stock_disponible is None:
+        # cantidad/precio_unitario se usan para calcular el monto en
+        # cualquier categoría (ver GastoForm), pero el stock es exclusivo
+        # de Repuestos: sin este chequeo, un gasto de Accesorios con
+        # cantidad tendría un "stock disponible" que no significa nada.
+        if (
+            self.pk is None
+            and self.cantidad is not None
+            and self.stock_disponible is None
+            and self.categoria_id
+            and self.categoria.nombre == 'Repuestos'
+        ):
             self.stock_disponible = self.cantidad
         super().save(*args, **kwargs)
 
@@ -409,10 +421,13 @@ class Pago(models.Model):
         'forma de pago', max_length=20, choices=FormaPago.choices
     )
     fecha = models.DateField()
+    # CASCADE: el trabajo es el dueño de sus pagos. Al borrar un trabajo
+    # se borran también sus pagos (junto con el gasto tercerizado y la
+    # devolución de stock de sus repuestos usados) — ver trabajo_delete.
     trabajo = models.ForeignKey(
         Trabajo,
         verbose_name='trabajo',
-        on_delete=models.PROTECT,
+        on_delete=models.CASCADE,
         related_name='pagos',
     )
     detalle = models.TextField('detalle', blank=True)

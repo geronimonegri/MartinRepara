@@ -23,8 +23,14 @@
                 {% for error in form.categoria.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
             </div>
 
+            <div class="form-group" id="tipo-dispositivo-field" hidden>
+                <label for="{{ form.tipo_dispositivo.id_for_label }}">{{ form.tipo_dispositivo.label }}</label>
+                {{ form.tipo_dispositivo }}
+                {% for error in form.tipo_dispositivo.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+            </div>
+
             <div class="form-group">
-                <label for="id_subcategoria">{{ form.subcategoria.label }}</label>
+                <label for="id_subcategoria">Subcategoría</label>
                 <select name="subcategoria" id="id_subcategoria" class="form-control">
                     <option value="">{{ form.fields.subcategoria.empty_label }}</option>
                     {% for sub in subcategorias_gasto %}
@@ -35,6 +41,16 @@
                     {% endfor %}
                 </select>
                 {% for error in form.subcategoria.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+                <select name="tipo_repuesto" id="id_tipo_repuesto" class="form-control" hidden>
+                    <option value="">{{ form.fields.tipo_repuesto.empty_label }}</option>
+                    {% for tr in tipos_repuesto %}
+                        <option value="{{ tr.pk }}" data-tipo-dispositivo="{{ tr.tipo_dispositivo_id }}"
+                                {% if form.tipo_repuesto.value|stringformat:"s" == tr.pk|stringformat:"s" %}selected{% endif %}>
+                            {{ tr.nombre }}
+                        </option>
+                    {% endfor %}
+                </select>
+                {% for error in form.tipo_repuesto.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
             </div>
 
             <div class="form-group">
@@ -43,10 +59,23 @@
                 {% for error in form.descripcion.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
             </div>
 
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="{{ form.cantidad.id_for_label }}">{{ form.cantidad.label }}</label>
+                    {{ form.cantidad }}
+                    {% for error in form.cantidad.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+                </div>
+                <div class="form-group">
+                    <label for="{{ form.precio_unitario.id_for_label }}">{{ form.precio_unitario.label }}</label>
+                    {{ form.precio_unitario }}
+                    {% for error in form.precio_unitario.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+                </div>
+            </div>
+
             <div class="form-group">
                 <label for="{{ form.monto.id_for_label }}">{{ form.monto.label }}</label>
                 {{ form.monto }}
-                <div class="field-hint" id="monto-hint" hidden>Se calcula solo: cantidad × precio unitario.</div>
+                <div class="field-hint">Se calcula solo: cantidad × precio unitario.</div>
                 {% for error in form.monto.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
             </div>
 
@@ -58,26 +87,6 @@
                         <button type="button" class="btn-add" id="btn-nuevo-proveedor" title="Agregar proveedor nuevo">{% nav_icon 'plus' %}</button>
                     </div>
                     {% for error in form.proveedor.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
-                </div>
-
-                <div class="form-group">
-                    <label for="{{ form.tipo_dispositivo.id_for_label }}">{{ form.tipo_dispositivo.label }}</label>
-                    {{ form.tipo_dispositivo }}
-                    {% for error in form.tipo_dispositivo.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
-                </div>
-
-                <div class="form-group">
-                    <label for="id_tipo_repuesto">{{ form.tipo_repuesto.label }}</label>
-                    <select name="tipo_repuesto" id="id_tipo_repuesto" class="form-control">
-                        <option value="">{{ form.fields.tipo_repuesto.empty_label }}</option>
-                        {% for tr in tipos_repuesto %}
-                            <option value="{{ tr.pk }}" data-tipo-dispositivo="{{ tr.tipo_dispositivo_id }}"
-                                    {% if form.tipo_repuesto.value|stringformat:"s" == tr.pk|stringformat:"s" %}selected{% endif %}>
-                                {{ tr.nombre }}
-                            </option>
-                        {% endfor %}
-                    </select>
-                    {% for error in form.tipo_repuesto.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
                 </div>
 
                 <div class="form-group">
@@ -112,19 +121,6 @@
                         <button type="button" class="btn-add" id="btn-nuevo-modelo" title="Agregar modelo nuevo">{% nav_icon 'plus' %}</button>
                     </div>
                     {% for error in form.modelo.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="{{ form.cantidad.id_for_label }}">{{ form.cantidad.label }}</label>
-                        {{ form.cantidad }}
-                        {% for error in form.cantidad.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
-                    </div>
-                    <div class="form-group">
-                        <label for="{{ form.precio_unitario.id_for_label }}">{{ form.precio_unitario.label }}</label>
-                        {{ form.precio_unitario }}
-                        {% for error in form.precio_unitario.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
-                    </div>
                 </div>
             </div>
 
@@ -162,7 +158,7 @@
                     <div class="gasto-history-row">
                         <div>
                             <span class="gasto-history-desc">{{ gasto.numero }} · {{ gasto.descripcion }}</span>
-                            <div class="row-subtitle">{{ gasto.categoria.nombre }}{% if gasto.subcategoria %} · {{ gasto.subcategoria.nombre }}{% endif %} · {{ gasto.fecha|date:"d/m/Y" }}</div>
+                            <div class="row-subtitle">{{ gasto.categoria.nombre }}{% if gasto.subcategoria %} · {{ gasto.subcategoria.nombre }}{% elif gasto.tipo_repuesto %} · {{ gasto.tipo_repuesto.nombre }}{% endif %} · {{ gasto.fecha|date:"d/m/Y" }}</div>
                         </div>
                         <div class="row-actions">
                             <span class="gasto-history-monto">{{ gasto.monto|moneda }}</span>
@@ -210,8 +206,8 @@
     var categoriaSelect = document.getElementById('id_categoria');
     var subcategoriaSelect = document.getElementById('id_subcategoria');
     var repuestoFields = document.getElementById('repuesto-fields');
+    var tipoDispositivoField = document.getElementById('tipo-dispositivo-field');
     var montoInput = document.getElementById('id_monto');
-    var montoHint = document.getElementById('monto-hint');
     var tipoDispositivoSelect = document.getElementById('id_tipo_dispositivo');
     var tipoRepuestoSelect = document.getElementById('id_tipo_repuesto');
     var marcaSelect = document.getElementById('id_marca');
@@ -239,10 +235,20 @@
     function actualizarCategoria() {
         var esRepuesto = NOMBRES_CATEGORIA[categoriaSelect.value] === 'Repuestos';
         repuestoFields.hidden = !esRepuesto;
-        montoInput.readOnly = esRepuesto;
-        montoHint.hidden = !esRepuesto;
+        tipoDispositivoField.hidden = !esRepuesto;
+
+        // El campo "Subcategoría" es uno solo visualmente: para Repuestos
+        // muestra los tipos de repuesto (filtrados por tipo de dispositivo)
+        // en vez de las subcategorías normales.
+        subcategoriaSelect.hidden = esRepuesto;
+        tipoRepuestoSelect.hidden = !esRepuesto;
+        if (esRepuesto) {
+            subcategoriaSelect.value = '';
+        } else {
+            tipoRepuestoSelect.value = '';
+        }
+
         filtrarPorAtributo(subcategoriaSelect, 'data-categoria', categoriaSelect.value);
-        if (esRepuesto) { actualizarMonto(); }
     }
 
     function actualizarTipoDispositivo() {
@@ -261,6 +267,10 @@
         montoInput.value = (cantidad * precio).toFixed(2);
     }
 
+    // Monto se calcula solo (cantidad × precio unitario) para cualquier
+    // categoría: siempre de solo lectura.
+    montoInput.readOnly = true;
+
     categoriaSelect.addEventListener('change', actualizarCategoria);
     tipoDispositivoSelect.addEventListener('change', actualizarTipoDispositivo);
     marcaSelect.addEventListener('change', actualizarModelo);
@@ -269,6 +279,7 @@
 
     actualizarCategoria();
     actualizarTipoDispositivo();
+    actualizarMonto();
 
     function csrfToken() {
         return document.querySelector('#gasto-form input[name=csrfmiddlewaretoken]').value;

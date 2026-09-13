@@ -4,6 +4,7 @@ Todas devuelven datos "crudos" (Decimal, dict, querysets) listos para
 que una vista los formatee. No hay lógica de presentación acá.
 """
 
+import calendar
 from datetime import date
 from decimal import Decimal
 
@@ -126,6 +127,7 @@ PERIODOS = [
     ('6m', 'Últimos 6 meses'),
     ('anio', 'Este año'),
     ('todo', 'Todo'),
+    ('mes_especifico', 'Mes específico'),
 ]
 PERIODO_DEFAULT = 'mes'
 PERIODO_VALORES = {clave for clave, _ in PERIODOS}
@@ -138,9 +140,14 @@ def _primer_dia_hace_n_meses(hoy, n):
     return date(anio, mes, 1)
 
 
-def rango_periodo(clave, hoy=None):
+def rango_periodo(clave, hoy=None, mes_especifico=None):
     """(fecha_desde, fecha_hasta) inclusive para la clave de período elegida
-    en el selector de Estadísticas. (None, None) para 'todo' (sin filtro)."""
+    en el selector de Estadísticas. (None, None) para 'todo' (sin filtro).
+
+    mes_especifico es (anio, mes) y solo aplica con clave='mes_especifico'
+    (el control "‹ Septiembre 2026 ›"): el rango es ese mes completo, salvo
+    que sea el mes actual, en cuyo caso se corta en "hoy" (igual que 'mes').
+    """
     hoy = hoy or timezone.now().date()
     if clave == 'mes':
         return hoy.replace(day=1), hoy
@@ -150,6 +157,10 @@ def rango_periodo(clave, hoy=None):
         return _primer_dia_hace_n_meses(hoy, 5), hoy
     if clave == 'anio':
         return hoy.replace(month=1, day=1), hoy
+    if clave == 'mes_especifico' and mes_especifico:
+        anio, mes = mes_especifico
+        ultimo_dia = calendar.monthrange(anio, mes)[1]
+        return date(anio, mes, 1), min(date(anio, mes, ultimo_dia), hoy)
     return None, None
 
 

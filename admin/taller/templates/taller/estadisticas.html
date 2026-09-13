@@ -6,10 +6,23 @@
 {% block content %}
 <h1 class="page-title">Estadísticas</h1>
 
-<div class="chip-group periodo-selector">
-    {% for clave, label in periodos %}
-        <a href="?periodo={{ clave }}" class="chip {% if periodo_actual == clave %}active{% endif %}">{{ label }}</a>
-    {% endfor %}
+<div class="page-header-row estadisticas-periodo-row">
+    <div class="chip-group periodo-selector">
+        {% for clave, label in periodos %}
+            <a href="?periodo={{ clave }}" class="chip {% if periodo_actual == clave %}active{% endif %}">{{ label }}</a>
+        {% endfor %}
+    </div>
+    {% if periodo_actual == 'mes_especifico' %}
+        <div class="month-nav">
+            <a href="?periodo=mes_especifico&mes={{ mes_especifico_anterior_valor }}" class="month-nav-btn" aria-label="Mes anterior">&lsaquo;</a>
+            <span class="month-nav-label">{{ mes_especifico_fecha|date:"F Y"|capfirst }}</span>
+            {% if puede_avanzar_especifico %}
+                <a href="?periodo=mes_especifico&mes={{ mes_especifico_siguiente_valor }}" class="month-nav-btn" aria-label="Mes siguiente">&rsaquo;</a>
+            {% else %}
+                <span class="month-nav-btn month-nav-btn-disabled" aria-disabled="true">&rsaquo;</span>
+            {% endif %}
+        </div>
+    {% endif %}
 </div>
 
 <h2 class="section-title estadisticas-section-title">Resumen</h2>
@@ -48,7 +61,7 @@
 </div>
 {{ categorias_gasto_json|json_script:"categorias-gasto-data" }}
 
-{% include 'taller/_estadisticas_reparaciones.html' with reparaciones=reparaciones %}
+{% include 'taller/_estadisticas_reparaciones.html' with reparaciones=reparaciones reparaciones_json=reparaciones_json reparaciones_chart_height=reparaciones_chart_height chart_id='top' %}
 
 {% include 'taller/_estadisticas_marcas.html' with marcas=marcas %}
 
@@ -67,10 +80,10 @@
     <div class="device-tab-panel" id="device-panel-{{ tab.tipo.pk }}" {% if tab.tipo.pk != tab_default %}hidden{% endif %}>
         <h3 class="section-title">Resumen · {{ tab.tipo.nombre }}</h3>
         {% include 'taller/_estadisticas_resumen.html' with resumen=tab.resumen tercerizacion=tab.tercerizacion %}
-        {% include 'taller/_estadisticas_reparaciones.html' with reparaciones=tab.reparaciones %}
+        {% include 'taller/_estadisticas_reparaciones.html' with reparaciones=tab.reparaciones reparaciones_json=tab.reparaciones_json reparaciones_chart_height=tab.reparaciones_chart_height chart_id=tab.chart_id %}
         {% include 'taller/_estadisticas_marcas.html' with marcas=tab.marcas %}
         {% include 'taller/_estadisticas_tercerizacion.html' with tercerizacion_por_tercero=tab.tercerizacion_por_tercero tercerizacion_por_reparacion=tab.tercerizacion_por_reparacion %}
-        {% include 'taller/_estadisticas_repuestos.html' with repuestos=tab.repuestos %}
+        {% include 'taller/_estadisticas_repuestos.html' with repuestos=tab.repuestos repuestos_json=tab.repuestos_json repuestos_chart_height=tab.repuestos_chart_height chart_id=tab.chart_id %}
     </div>
 {% empty %}
     <div class="empty-state">No hay tipos de dispositivo configurados.</div>
@@ -112,9 +125,99 @@
             },
             scales: {
                 x: { display: false },
-                y: { grid: { display: false }, ticks: { color: '#374151', font: { size: 12 } } },
+                y: { grid: { display: false }, ticks: { color: '#374151', font: { size: 12 }, autoSkip: false } },
             },
         },
+    });
+})();
+
+(function () {
+    if (typeof Chart === 'undefined') { return; }
+
+    function leerJSON(id) {
+        var el = document.getElementById(id);
+        return el ? JSON.parse(el.textContent) : [];
+    }
+
+    var COLOR_BARRA = '#1c1c1a';
+    var COLOR_NEGATIVO = '#b42318';
+
+    var opcionesBase = {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+            x: { display: false },
+            y: { grid: { display: false }, ticks: { color: '#374151', font: { size: 12 }, autoSkip: false } },
+        },
+    };
+
+    // --- Repuestos más usados: Cantidad usada / Costo ---
+    document.querySelectorAll('.chart-metrica-selector[data-repuestos-metrica]').forEach(function (selector) {
+        var chartId = selector.getAttribute('data-repuestos-metrica');
+        var datos = leerJSON('repuestos-data-' + chartId);
+        var canvas = document.getElementById('repuestosChart-' + chartId);
+        if (!canvas || !datos.length) { return; }
+
+        var chart = new Chart(canvas, {
+            type: 'bar',
+            data: {
+                labels: datos.map(function (d) { return d.nombre; }),
+                datasets: [{
+                    data: datos.map(function (d) { return d.cantidad; }),
+                    backgroundColor: COLOR_BARRA, borderRadius: 4, maxBarThickness: 28,
+                }],
+            },
+            options: opcionesBase,
+        });
+
+        selector.querySelectorAll('.chip').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                selector.querySelectorAll('.chip').forEach(function (b) { b.classList.remove('active'); });
+                btn.classList.add('active');
+                var metrica = btn.getAttribute('data-metrica');
+                chart.data.datasets[0].data = datos.map(function (d) { return d[metrica]; });
+                chart.update();
+            });
+        });
+    });
+
+    // --- Reparaciones más frecuentes: selector de métrica, barras en rojo
+    // cuando la ganancia total de esa reparación es negativa (sin importar
+    // qué métrica se esté mirando) ---
+    document.querySelectorAll('.chart-metrica-selector[data-reparaciones-metrica]').forEach(function (selector) {
+        var chartId = selector.getAttribute('data-reparaciones-metrica');
+        var datos = leerJSON('reparaciones-data-' + chartId);
+        var canvas = document.getElementById('reparacionesChart-' + chartId);
+        if (!canvas || !datos.length) { return; }
+
+        var colores = datos.map(function (d) { return d.ganancia_total < 0 ? COLOR_NEGATIVO : COLOR_BARRA; });
+
+        var chart = new Chart(canvas, {
+            type: 'bar',
+            data: {
+                labels: datos.map(function (d) { return d.nombre; }),
+                datasets: [{
+                    data: datos.map(function (d) { return d.cantidad; }),
+                    backgroundColor: colores, borderRadius: 4, maxBarThickness: 28,
+                }],
+            },
+            options: opcionesBase,
+        });
+
+        selector.querySelectorAll('.chip').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                selector.querySelectorAll('.chip').forEach(function (b) { b.classList.remove('active'); });
+                btn.classList.add('active');
+                var metrica = btn.getAttribute('data-metrica');
+                chart.data.datasets[0].data = datos.map(function (d) {
+                    var valor = d[metrica];
+                    return valor === null ? 0 : valor;
+                });
+                chart.update();
+            });
+        });
     });
 })();
 

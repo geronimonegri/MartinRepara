@@ -13,7 +13,16 @@
             </span>
         </div>
     </td>
-    <td class="problema-cell">{{ trabajo.descripcion_problema }}</td>
+    <td class="problema-cell">
+        {{ trabajo.descripcion_problema }}
+        {% if trabajo.repuestos_usados.all %}
+            <div class="repuesto-chip-list">
+                {% for repuesto_usado in trabajo.repuestos_usados.all %}
+                    <span class="repuesto-chip">{{ repuesto_usado|repuesto_usado_chip }}</span>
+                {% endfor %}
+            </div>
+        {% endif %}
+    </td>
     <td>
         <form method="post" action="{% url 'taller:trabajo_estado_update' trabajo.pk %}" class="estado-form">
             {% csrf_token %}
@@ -56,7 +65,13 @@
             <a href="{% url 'taller:trabajo_edit' trabajo.pk %}" class="icon-btn" aria-label="Editar trabajo" title="Editar">
                 {% nav_icon 'edit' %}
             </a>
-            <form method="post" action="{% url 'taller:trabajo_delete' trabajo.pk %}" class="icon-form trabajo-delete-form" data-cliente="{{ trabajo.cliente.nombre }}">
+            <form method="post" action="{% url 'taller:trabajo_delete' trabajo.pk %}" class="icon-form trabajo-delete-form"
+                  data-cliente="{{ trabajo.cliente.nombre }}"
+                  data-pagos-count="{{ trabajo.pagos_count_calc }}"
+                  data-pagos-total="{{ trabajo.total_pagado_calc|moneda }}"
+                  data-tercerizado-monto="{{ trabajo.tercerizado_monto|default_if_none:0 }}"
+                  data-tercerizado-monto-fmt="{{ trabajo.tercerizado_monto|moneda }}"
+                  data-repuestos-count="{{ trabajo.repuestos_count_calc }}">
                 {% csrf_token %}
                 <button type="submit" class="icon-btn icon-btn-danger" aria-label="Eliminar trabajo" title="Eliminar">
                     {% nav_icon 'trash' %}

@@ -40,6 +40,24 @@
                 </tbody>
             </table>
         </div>
+
+        <div class="chart-metrica-row">
+            <div class="chip-group chart-metrica-selector" data-reparaciones-metrica="{{ chart_id }}">
+                <button type="button" class="chip active" data-metrica="cantidad">Cantidad</button>
+                <button type="button" class="chip" data-metrica="ingresos">Ingresos</button>
+                <button type="button" class="chip" data-metrica="costo">Costo</button>
+                <button type="button" class="chip" data-metrica="ganancia_total">Ganancia total</button>
+                <button type="button" class="chip" data-metrica="ganancia_promedio">Ganancia promedio</button>
+                <button type="button" class="chip" data-metrica="margen_pct">Margen %</button>
+                <button type="button" class="chip" data-metrica="tercerizado">Tercerizado</button>
+            </div>
+        </div>
+        <div class="chart-wrap" style="height: {{ reparaciones_chart_height }}px;">
+            <canvas id="reparacionesChart-{{ chart_id }}"></canvas>
+        </div>
+        {% with data_id="reparaciones-data-"|add:chart_id %}
+            {{ reparaciones_json|json_script:data_id }}
+        {% endwith %}
     {% else %}
         <div class="empty-state">No hay trabajos en este período.</div>
     {% endif %}

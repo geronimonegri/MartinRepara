@@ -292,6 +292,19 @@ a { text-decoration: none; color: inherit; }
 
 .problema-cell { color: #374151; max-width: 260px; }
 
+.repuesto-chip-list { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+
+.repuesto-chip {
+    display: inline-block;
+    background: #f1f5f9;
+    color: #475569;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+
 .device-cell { display: flex; align-items: center; gap: 8px; color: #374151; }
 
 .device-cell svg { width: 16px; height: 16px; color: #64748b; }
@@ -863,6 +876,13 @@ textarea.form-control { resize: vertical; min-height: 90px; }
 .estadisticas-section-title { margin-top: 28px; }
 
 .periodo-selector { margin-bottom: 4px; }
+
+.estadisticas-periodo-row { flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 20px; }
+.estadisticas-periodo-row .periodo-selector { margin-bottom: 0; }
+
+.chart-metrica-row { margin: 16px 0 12px; }
+
+.estadisticas-tabla-colapsada { margin-top: 16px; }
 
 .gasto-bar-chart-wrap { position: relative; margin-bottom: 18px; }
 

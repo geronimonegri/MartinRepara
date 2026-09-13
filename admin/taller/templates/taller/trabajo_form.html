@@ -94,12 +94,6 @@
             {% for error in form.descripcion_problema.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
         </div>
 
-        <div class="form-group">
-            <label for="{{ form.detalle.id_for_label }}">{{ form.detalle.label }}</label>
-            {{ form.detalle }}
-            {% for error in form.detalle.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
-        </div>
-
         <div class="form-row">
             <div class="form-group">
                 <label for="{{ form.precio_acordado.id_for_label }}">{{ form.precio_acordado.label }}</label>

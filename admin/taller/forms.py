@@ -65,7 +65,8 @@ class TrabajoForm(forms.ModelForm):
     mayúsculas ni espacios); si el teléfono ya existe pero con otro
     nombre, se crea un Cliente nuevo en vez de renombrar el existente
     (mismo teléfono no implica misma persona: puede ser un número
-    compartido en una familia, o un error de tipeo).
+    compartido en una familia, o un error de tipeo). El teléfono es
+    opcional: sin él, la búsqueda/reutilización se hace solo por nombre.
     """
 
     cliente_nombre = forms.CharField(
@@ -79,9 +80,10 @@ class TrabajoForm(forms.ModelForm):
     cliente_telefono = forms.CharField(
         label='Teléfono',
         max_length=30,
+        required=False,
         widget=forms.TextInput(attrs={
             'class': 'form-control',
-            'placeholder': '11-2345-6789',
+            'placeholder': '11-2345-6789 (opcional)',
         }),
     )
     tipo_dispositivo = forms.ModelChoiceField(
@@ -93,7 +95,7 @@ class TrabajoForm(forms.ModelForm):
         model = Trabajo
         fields = [
             'tipo_dispositivo', 'marca', 'modelo', 'tipo_reparacion',
-            'descripcion_problema', 'detalle', 'precio_acordado', 'fecha_ingreso',
+            'descripcion_problema', 'precio_acordado', 'fecha_ingreso',
             'fecha_entrega', 'tercero', 'tercerizado_detalle', 'tercerizado_monto',
         ]
         labels = {
@@ -101,7 +103,6 @@ class TrabajoForm(forms.ModelForm):
             'modelo': 'Modelo',
             'tipo_reparacion': 'Tipo de reparación',
             'descripcion_problema': 'Descripción del problema',
-            'detalle': 'Detalle',
             'precio_acordado': 'Precio acordado',
             'fecha_ingreso': 'Fecha de ingreso',
             'fecha_entrega': 'Fecha de entrega',
@@ -117,11 +118,6 @@ class TrabajoForm(forms.ModelForm):
                 'class': 'form-control',
                 'rows': 3,
                 'placeholder': 'Ej: pantalla rota, no enciende...',
-            }),
-            'detalle': forms.Textarea(attrs={
-                'class': 'form-control',
-                'rows': 2,
-                'placeholder': 'Qué se hizo (opcional)',
             }),
             'precio_acordado': forms.NumberInput(attrs={
                 'class': 'form-control',
@@ -148,7 +144,7 @@ class TrabajoForm(forms.ModelForm):
 
     field_order = [
         'cliente_nombre', 'cliente_telefono', 'tipo_dispositivo', 'marca', 'modelo',
-        'tipo_reparacion', 'descripcion_problema', 'detalle', 'precio_acordado', 'fecha_ingreso',
+        'tipo_reparacion', 'descripcion_problema', 'precio_acordado', 'fecha_ingreso',
         'fecha_entrega', 'tercero', 'tercerizado_detalle', 'tercerizado_monto',
     ]
 
@@ -194,9 +190,11 @@ class TrabajoForm(forms.ModelForm):
         nombre = ' '.join(self.cleaned_data['cliente_nombre'].split())
         telefono = self.cleaned_data['cliente_telefono'].strip()
 
-        cliente = Cliente.objects.filter(
-            telefono=telefono, nombre__iexact=nombre
-        ).first()
+        if telefono:
+            cliente = Cliente.objects.filter(telefono=telefono, nombre__iexact=nombre).first()
+        else:
+            # Sin teléfono no hay con qué cruzar: se busca solo por nombre.
+            cliente = Cliente.objects.filter(nombre__iexact=nombre).first()
         if cliente is None:
             cliente = Cliente.objects.create(nombre=nombre, telefono=telefono)
 
@@ -292,12 +290,14 @@ RepuestoUsadoFormSet = forms.inlineformset_factory(
 class GastoForm(forms.ModelForm):
     """Formulario de alta/edición de Gasto.
 
+    cantidad × precio unitario calcula el monto para CUALQUIER categoría
+    (default cantidad=1, para un gasto de un solo ítem) — ver clean().
     Si la categoría elegida es "Repuestos" se piden además proveedor,
-    tipo de dispositivo, tipo de repuesto, marca, modelo (opcional),
-    cantidad y precio unitario, y el monto se calcula solo
-    (cantidad × precio unitario) — ver clean(). Para cualquier otra
-    categoría esos campos no aplican y se limpian por si venían
-    cargados de una edición previa.
+    tipo de dispositivo, subcategoría (que para esta categoría muestra
+    los tipos de repuesto) y marca, modelo (opcional); esos campos no
+    aplican a otras categorías y se limpian por si venían cargados de una
+    edición previa. El stock (stock_disponible) sigue siendo exclusivo
+    de Repuestos.
     """
 
     class Meta:
@@ -373,8 +373,11 @@ class GastoForm(forms.ModelForm):
         self.fields['modelo'].queryset = Modelo.objects.filter(activo=True)
         self.fields['modelo'].required = False
         self.fields['modelo'].empty_label = 'Sin modelo'
-        self.fields['cantidad'].required = False
-        self.fields['precio_unitario'].required = False
+        # cantidad/precio_unitario ahora aplican a cualquier categoría
+        # (calculan el monto): son obligatorios siempre, no solo en
+        # Repuestos.
+        self.fields['cantidad'].required = True
+        self.fields['precio_unitario'].required = True
 
     def clean(self):
         cleaned_data = super().clean()
@@ -398,63 +401,59 @@ class GastoForm(forms.ModelForm):
                 'tipo_dispositivo': 'tipo de dispositivo',
                 'tipo_repuesto': 'tipo de repuesto',
                 'marca': 'marca',
-                'cantidad': 'cantidad',
-                'precio_unitario': 'precio unitario',
             }
             for campo, etiqueta in requeridos.items():
-                valor = cleaned_data.get(campo)
-                falta = valor is None if campo == 'precio_unitario' else not valor
-                if falta:
+                if not cleaned_data.get(campo):
                     self.add_error(campo, f'Elegí {etiqueta}: es obligatorio para gastos de Repuestos.')
-
-            cantidad = cleaned_data.get('cantidad')
-            precio_unitario = cleaned_data.get('precio_unitario')
-
-            if self.instance.pk and cantidad is not None:
-                usado = self.instance.usos.aggregate(total=Sum('cantidad'))['total'] or 0
-                if cantidad < usado:
-                    self.add_error(
-                        'cantidad',
-                        f'Ya se usaron {usado} unidades en trabajos: no podés bajar la cantidad a menos de eso.',
-                    )
-
-            if cantidad and precio_unitario is not None:
-                cleaned_data['monto'] = Decimal(cantidad) * precio_unitario
         else:
-            for campo in (
-                'proveedor', 'tipo_dispositivo', 'tipo_repuesto', 'marca',
-                'modelo', 'cantidad', 'precio_unitario',
-            ):
+            for campo in ('proveedor', 'tipo_dispositivo', 'tipo_repuesto', 'marca', 'modelo'):
                 cleaned_data[campo] = None
-            if cleaned_data.get('monto') is None:
-                self.add_error('monto', 'Este campo es obligatorio.')
+
+        # cantidad × precio unitario calcula el monto para cualquier
+        # categoría (son campos obligatorios siempre, ver __init__); el
+        # stock sigue siendo exclusivo de Repuestos.
+        cantidad = cleaned_data.get('cantidad')
+        precio_unitario = cleaned_data.get('precio_unitario')
+
+        if es_repuesto and self.instance.pk and cantidad is not None:
+            usado = self.instance.usos.aggregate(total=Sum('cantidad'))['total'] or 0
+            if cantidad < usado:
+                self.add_error(
+                    'cantidad',
+                    f'Ya se usaron {usado} unidades en trabajos: no podés bajar la cantidad a menos de eso.',
+                )
+
+        if cantidad and precio_unitario is not None:
+            cleaned_data['monto'] = Decimal(cantidad) * precio_unitario
 
         return cleaned_data
 
     def save(self, commit=True):
-        # No alcanza con limpiar estos campos en cleaned_data: construct_instance
-        # "deja el default" de un campo (cantidad=1) cuando no vino en el POST,
-        # así que sin esto una edición que saca la categoría de "Repuestos"
-        # dejaría cantidad=1 pegado en vez de None. Se fuerza acá, después de
-        # construir la instancia.
         gasto = super().save(commit=False)
         categoria = self.cleaned_data.get('categoria')
         es_repuesto = bool(categoria and categoria.nombre == 'Repuestos')
-        if not es_repuesto:
+        if es_repuesto:
+            # En el form, "Subcategoría" es el mismo campo visual que
+            # "Tipo de repuesto" para esta categoría: el select real de
+            # subcategoría queda oculto, así que su valor no aplica acá.
+            gasto.subcategoria = None
+            if gasto.pk:
+                # Edición de un repuesto ya existente: mantiene lo ya usado
+                # y recalcula el stock disponible sobre la cantidad nueva
+                # (la creación ya la resuelve Gasto.save()).
+                usado = gasto.usos.aggregate(total=Sum('cantidad'))['total'] or 0
+                gasto.stock_disponible = (gasto.cantidad or 0) - usado
+        else:
+            # No alcanza con limpiar estos campos en cleaned_data:
+            # construct_instance no toca un atributo que no vino en el
+            # POST, así que sin esto una edición que saca la categoría de
+            # "Repuestos" dejaría estos valores pegados de antes.
             gasto.proveedor = None
             gasto.tipo_dispositivo = None
             gasto.tipo_repuesto = None
             gasto.marca = None
             gasto.modelo = None
-            gasto.cantidad = None
-            gasto.precio_unitario = None
             gasto.stock_disponible = None
-        elif gasto.pk:
-            # Edición de un repuesto ya existente: mantiene lo ya usado y
-            # recalcula el stock disponible sobre la cantidad nueva (la
-            # creación ya la resuelve Gasto.save()).
-            usado = gasto.usos.aggregate(total=Sum('cantidad'))['total'] or 0
-            gasto.stock_disponible = (gasto.cantidad or 0) - usado
         if commit:
             gasto.save()
         return gasto
