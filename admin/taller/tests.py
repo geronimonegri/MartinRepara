@@ -2277,3 +2277,48 @@ class StockFilasClickeablesTests(TestCase):
             },
         )
         self.assertRedirects(response, f"{reverse('taller:gasto_create')}?mes=2026-07")
+
+
+class GastosHistorialMostrarMasTests(TestCase):
+    """Historial de Gastos: solo 5 por defecto + "Mostrar más (N
+    restantes)", igual que en Pagos — el filtro de categoría de la URL ya
+    reduce gastos_mes antes de llegar al template, así que el corte de 5
+    se aplica sobre lo ya filtrado sin lógica extra."""
+
+    def setUp(self):
+        self.cat_otro = CategoriaGasto.objects.get(nombre='Otro')
+        self.cat_repuestos = CategoriaGasto.objects.get(nombre='Repuestos')
+
+    def _crear_gastos(self, cantidad, categoria):
+        for i in range(cantidad):
+            Gasto.objects.create(
+                descripcion=f'Gasto {categoria.nombre} {i}', categoria=categoria,
+                fecha=date(2026, 7, 5), cantidad=1, precio_unitario=Decimal('100'),
+                monto=Decimal('100'),
+            )
+
+    def test_sin_boton_de_mostrar_mas_con_5_o_menos(self):
+        self._crear_gastos(5, self.cat_otro)
+        response = self.client.get(reverse('taller:gasto_create'), {'mes': '2026-07'})
+        self.assertNotContains(response, 'id="gastos-toggle-btn"')
+
+    def test_boton_de_mostrar_mas_aparece_con_mas_de_5(self):
+        self._crear_gastos(7, self.cat_otro)
+        response = self.client.get(reverse('taller:gasto_create'), {'mes': '2026-07'})
+        self.assertContains(response, 'id="gastos-toggle-btn"')
+        self.assertContains(response, 'Mostrar más (2 restantes)')
+
+    def test_respeta_el_filtro_de_categoria(self):
+        self._crear_gastos(7, self.cat_otro)
+        self._crear_gastos(3, self.cat_repuestos)
+        # Sin filtro: 10 gastos (más el que crea seed, si hubiera) -> con
+        # más de 5, aparece "Mostrar más".
+        sin_filtro = self.client.get(reverse('taller:gasto_create'), {'mes': '2026-07'})
+        self.assertContains(sin_filtro, 'id="gastos-toggle-btn"')
+
+        # Filtrado a Repuestos: solo 3, no debería aparecer el botón.
+        con_filtro = self.client.get(
+            reverse('taller:gasto_create'), {'mes': '2026-07', 'categoria': self.cat_repuestos.pk},
+        )
+        self.assertNotContains(con_filtro, 'id="gastos-toggle-btn"')
+        self.assertEqual(len(con_filtro.context['gastos_mes']), 3)

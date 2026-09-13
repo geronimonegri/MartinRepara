@@ -153,9 +153,9 @@
         </div>
 
         {% if gastos_mes %}
-            <div class="gasto-history-list">
+            <div class="gasto-history-list" id="gastos-history-list">
                 {% for gasto in gastos_mes %}
-                    <div class="gasto-history-row">
+                    <div class="gasto-history-row{% if forloop.counter > 5 %} gasto-history-row-extra{% endif %}">
                         <div>
                             <span class="gasto-history-desc">{{ gasto.numero }} · {{ gasto.descripcion }}</span>
                             <div class="row-subtitle">{{ gasto.categoria.nombre }}{% if gasto.subcategoria %} · {{ gasto.subcategoria.nombre }}{% elif gasto.tipo_repuesto %} · {{ gasto.tipo_repuesto.nombre }}{% endif %} · {{ gasto.fecha|date:"d/m/Y" }}</div>
@@ -207,6 +207,9 @@
                     </div>
                 {% endfor %}
             </div>
+            {% if gastos_mes|length > 5 %}
+                <button type="button" id="gastos-toggle-btn" class="btn btn-outline btn-sm gasto-history-toggle" data-restantes="{{ gastos_mes|length|add:'-5' }}">Mostrar más ({{ gastos_mes|length|add:'-5' }} restantes)</button>
+            {% endif %}
         {% else %}
             <div class="empty-state gasto-history-empty">Sin gastos este mes.</div>
         {% endif %}
@@ -352,6 +355,29 @@
                 agregarOpcion(proveedorSelect, data.id, data.nombre, {});
             });
     });
+})();
+
+(function () {
+    var toggleBtn = document.getElementById('gastos-toggle-btn');
+    var extraRows = document.querySelectorAll('#gastos-history-list .gasto-history-row-extra');
+    var restantes = toggleBtn ? toggleBtn.getAttribute('data-restantes') : 0;
+    var expandido = false;
+
+    function actualizar() {
+        extraRows.forEach(function (row) {
+            row.classList.toggle('gasto-history-row-visible', expandido);
+        });
+        if (toggleBtn) {
+            toggleBtn.textContent = expandido ? 'Mostrar menos' : 'Mostrar más (' + restantes + ' restantes)';
+        }
+    }
+
+    if (toggleBtn) {
+        toggleBtn.addEventListener('click', function () {
+            expandido = !expandido;
+            actualizar();
+        });
+    }
 })();
 
 (function () {
