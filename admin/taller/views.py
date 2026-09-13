@@ -11,6 +11,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.dateparse import parse_date
+from django.utils.html import format_html
 from django.views.decorators.http import require_POST
 
 from . import analytics
@@ -97,7 +98,10 @@ def _con_indicador_pago(trabajos_qs):
 
 
 def trabajos_list(request):
-    query = request.GET.get('q', '').strip()
+    """"En taller": Recibido/En reparación/Listo, sin filtro de mes (un
+    trabajo activo no tiene por qué acotarse a cuándo entró). La búsqueda
+    por cliente/número es 100% cliente (JS): el server no filtra por
+    `q` para no duplicar esa lógica (ver trabajos_list.html)."""
     estado_filter = request.GET.get('estado', '').strip()
     categoria_filter = request.GET.get('categoria', '').strip()
 
@@ -113,33 +117,10 @@ def trabajos_list(request):
         .prefetch_related('pagos', repuestos_usados_prefetch)
         .exclude(estado=Trabajo.Estado.ENTREGADO)
     )
-    if query:
-        trabajos = trabajos.filter(cliente__nombre__icontains=query)
     if estado_filter:
         trabajos = trabajos.filter(estado=estado_filter)
     if categoria_filter:
         trabajos = trabajos.filter(tipo_dispositivo_id=categoria_filter)
-
-    hoy = timezone.now().date()
-    mes_param = request.GET.get('mes_entregados')
-    if mes_param:
-        parsed = _parse_mes_param(mes_param)
-        if parsed is None:
-            return redirect(request.path)
-        anio_e, mes_e = parsed
-    else:
-        anio_e, mes_e = hoy.year, hoy.month
-    anio_e_prev, mes_e_prev = analytics.mes_anterior(anio_e, mes_e)
-    anio_e_next, mes_e_next = analytics.mes_siguiente(anio_e, mes_e)
-
-    entregados = (
-        Trabajo.objects.select_related('cliente', 'tipo_dispositivo', 'marca', 'modelo')
-        .prefetch_related('pagos', repuestos_usados_prefetch)
-        .filter(
-            estado=Trabajo.Estado.ENTREGADO,
-            fecha_entrega__year=anio_e, fecha_entrega__month=mes_e,
-        )
-    )
 
     estados_filtro = [
         (value, label) for value, label in Trabajo.Estado.choices
@@ -151,17 +132,48 @@ def trabajos_list(request):
 
     return render(request, 'taller/trabajos_list.html', {
         'trabajos': _con_indicador_pago(trabajos),
-        'entregados': _con_indicador_pago(entregados),
-        'query': query,
+        'query': request.GET.get('q', '').strip(),
         'estado_filter': estado_filter,
         'categoria_filter': categoria_filter,
         'estados': Trabajo.Estado.choices,
         'estados_filtro': estados_filtro,
         'dispositivo_choices': dispositivo_choices,
-        'mes_entregados_fecha': date(anio_e, mes_e, 1),
-        'mes_entregados_anterior_valor': f'{anio_e_prev:04d}-{mes_e_prev:02d}',
-        'mes_entregados_siguiente_valor': f'{anio_e_next:04d}-{mes_e_next:02d}',
-        'puede_avanzar_entregados': (anio_e, mes_e) < (hoy.year, hoy.month),
+    })
+
+
+def trabajos_entregados(request):
+    """Entregados: con selector de mes (por fecha_entrega) + la misma
+    búsqueda cliente/número que "En taller", acotada al mes elegido."""
+    hoy = timezone.now().date()
+    mes_param = request.GET.get('mes')
+    if mes_param:
+        parsed = _parse_mes_param(mes_param)
+        if parsed is None:
+            return redirect(request.path)
+        anio, mes = parsed
+    else:
+        anio, mes = hoy.year, hoy.month
+    anio_prev, mes_prev = analytics.mes_anterior(anio, mes)
+    anio_next, mes_next = analytics.mes_siguiente(anio, mes)
+
+    repuestos_usados_prefetch = Prefetch(
+        'repuestos_usados',
+        queryset=RepuestoUsado.objects.select_related('gasto__tipo_repuesto', 'gasto__marca', 'gasto__modelo'),
+    )
+    entregados = (
+        Trabajo.objects.select_related('cliente', 'tipo_dispositivo', 'marca', 'modelo')
+        .prefetch_related('pagos', repuestos_usados_prefetch)
+        .filter(estado=Trabajo.Estado.ENTREGADO, fecha_entrega__year=anio, fecha_entrega__month=mes)
+    )
+
+    return render(request, 'taller/trabajos_entregados.html', {
+        'entregados': _con_indicador_pago(entregados),
+        'query': request.GET.get('q', '').strip(),
+        'estados': Trabajo.Estado.choices,
+        'mes_fecha': date(anio, mes, 1),
+        'mes_anterior_valor': f'{anio_prev:04d}-{mes_prev:02d}',
+        'mes_siguiente_valor': f'{anio_next:04d}-{mes_next:02d}',
+        'puede_avanzar': (anio, mes) < (hoy.year, hoy.month),
     })
 
 
@@ -177,12 +189,28 @@ def trabajo_estado_update(request, pk):
             # el popup de la lista): nunca se autocompleta acá.
             fecha_entrega = parse_date(request.POST.get('fecha_entrega') or '')
             trabajo.fecha_entrega = fecha_entrega or timezone.now().date()
+            trabajo.save()
+            # Al pasar a Entregado el trabajo se va de "En taller": el
+            # link ya apunta al mes de su fecha_entrega para que aparezca
+            # sin tener que navegar a mano si se entregó con fecha pasada
+            # o futura.
+            url_entregados = (
+                f"{reverse('taller:trabajos_entregados')}"
+                f'?mes={trabajo.fecha_entrega.year:04d}-{trabajo.fecha_entrega.month:02d}'
+            )
+            messages.success(
+                request,
+                format_html(
+                    '{} entregado. <a href="{}">Ver en Entregados.</a>',
+                    trabajo.numero, url_entregados,
+                ),
+            )
         else:
             # Bug corregido: al retroceder el estado, la fecha de entrega
             # vieja quedaba pegada y el trabajo seguía contando como
             # "entregado" en pantallas que miran esa fecha.
             trabajo.fecha_entrega = None
-        trabajo.save()
+            trabajo.save()
 
     next_url = request.POST.get('next') or reverse('taller:trabajos_list')
     return redirect(next_url)
@@ -215,6 +243,12 @@ def trabajo_edit(request, pk):
     # objeto que instance) apenas se llama is_valid(), así que después de
     # eso ya sería tarde para saber cómo estaba antes.
     tenia_tercerizacion = bool(trabajo.tercerizado_monto)
+    # "En taller" y "Entregados" son pantallas separadas: se edita desde
+    # cualquiera de las dos, así que hay que volver adonde se vino (con
+    # su búsqueda/mes/filtros tal cual quedaron) en vez de siempre a "En
+    # taller". El <form> de abajo no tiene action propio, así que postea
+    # a esta misma URL y el query string (con next incluido) sigue ahí.
+    next_url = request.GET.get('next')
 
     if request.method == 'POST':
         form = TrabajoForm(request.POST, instance=trabajo)
@@ -240,7 +274,7 @@ def trabajo_edit(request, pk):
                     request,
                     f'Tercerización eliminada. {trabajo.numero} ya no tiene tercerización.',
                 )
-            return redirect('taller:trabajos_list')
+            return redirect(next_url or reverse('taller:trabajos_list'))
     else:
         form = TrabajoForm(instance=trabajo, initial={
             'cliente_nombre': trabajo.cliente.nombre,
@@ -248,7 +282,7 @@ def trabajo_edit(request, pk):
         })
         formset = RepuestoUsadoFormSet(instance=trabajo)
     return render(request, 'taller/trabajo_form.html', {
-        'form': form, 'formset': formset, 'trabajo': trabajo,
+        'form': form, 'formset': formset, 'trabajo': trabajo, 'next_url': next_url,
     })
 
 
@@ -260,7 +294,8 @@ def trabajo_delete(request, pk):
     # cascada, lo que devuelve el stock al gasto de compra (señal
     # pre_delete en RepuestoUsado) — la compra en sí nunca se toca.
     trabajo.delete()
-    return redirect('taller:trabajos_list')
+    next_url = request.POST.get('next') or reverse('taller:trabajos_list')
+    return redirect(next_url)
 
 
 def _gasto_historial_context(request):

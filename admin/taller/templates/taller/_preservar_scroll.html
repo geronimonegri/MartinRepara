@@ -1,0 +1,35 @@
+<script>
+(function () {
+    // Esta pantalla navega con <a href="?..."> para cambiar de mes o de
+    // filtro (no hay SPA / fetch de por medio): cada click es una carga
+    // de página nueva, y el navegador arranca esa carga con scroll 0 por
+    // default. Se guarda la posición ANTES de navegar (solo para links
+    // que se quedan en esta misma pantalla) y se restaura al terminar de
+    // cargar, en vez de forzar un scrollTo a un valor fijo.
+    //
+    // scrollRestoration = 'manual' es necesario: si no, el propio
+    // navegador puede reponer su scroll automático (a 0, por ser una
+    // navegación nueva) después de que este script ya restauró el
+    // nuestro, pisándolo.
+    if ('scrollRestoration' in history) {
+        history.scrollRestoration = 'manual';
+    }
+
+    var CLAVE = 'scrollY:' + window.location.pathname;
+
+    window.addEventListener('load', function () {
+        var guardada = sessionStorage.getItem(CLAVE);
+        if (guardada !== null) {
+            window.scrollTo(0, parseInt(guardada, 10));
+            sessionStorage.removeItem(CLAVE);
+        }
+    });
+
+    document.addEventListener('click', function (event) {
+        var link = event.target.closest('a[href]');
+        if (!link || link.origin !== window.location.origin) { return; }
+        if (link.pathname !== window.location.pathname) { return; }
+        sessionStorage.setItem(CLAVE, String(window.scrollY));
+    });
+})();
+</script>

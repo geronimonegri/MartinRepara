@@ -7,6 +7,7 @@ app_name = 'taller'
 urlpatterns = [
     path('', views.dashboard, name='dashboard'),
     path('trabajos/', views.trabajos_list, name='trabajos_list'),
+    path('trabajos/entregados/', views.trabajos_entregados, name='trabajos_entregados'),
     path('trabajos/nuevo/', views.trabajo_create, name='trabajo_create'),
     path('trabajos/<int:pk>/editar/', views.trabajo_edit, name='trabajo_edit'),
     path('trabajos/<int:pk>/eliminar/', views.trabajo_delete, name='trabajo_delete'),

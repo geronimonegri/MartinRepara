@@ -82,6 +82,12 @@ a { text-decoration: none; color: inherit; }
 
 .nav-item.active { background: var(--sidebar-active-bg); color: var(--sidebar-text-active); }
 
+.nav-group { display: flex; flex-direction: column; gap: 2px; }
+
+.nav-subitems { display: flex; flex-direction: column; gap: 2px; }
+
+.nav-subitem { padding-left: 42px; font-size: 0.85rem; }
+
 .sidebar-footer { margin-top: auto; padding-top: 12px; display: flex; flex-direction: column; gap: 4px; }
 
 .nav-item-logout {

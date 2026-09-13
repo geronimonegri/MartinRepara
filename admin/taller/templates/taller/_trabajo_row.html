@@ -1,5 +1,5 @@
 {% load taller_extras %}
-<tr data-cliente="{{ trabajo.cliente.nombre|lower }}">
+<tr data-cliente="{{ trabajo.cliente.nombre|lower }}" data-numero="{{ trabajo.numero|lower }}">
     <td class="numero-cell">{{ trabajo.numero }}</td>
     <td>
         <div class="row-title">{{ trabajo.cliente.nombre }}</div>
@@ -62,7 +62,7 @@
     <td>{{ trabajo.fecha_entrega|date:"d/m/Y"|default:"—" }}</td>
     <td>
         <div class="row-actions">
-            <a href="{% url 'taller:trabajo_edit' trabajo.pk %}" class="icon-btn" aria-label="Editar trabajo" title="Editar">
+            <a href="{% url 'taller:trabajo_edit' trabajo.pk %}?next={{ request.get_full_path|urlencode }}" class="icon-btn" aria-label="Editar trabajo" title="Editar">
                 {% nav_icon 'edit' %}
             </a>
             <form method="post" action="{% url 'taller:trabajo_delete' trabajo.pk %}" class="icon-form trabajo-delete-form"
@@ -73,6 +73,7 @@
                   data-tercerizado-monto-fmt="{{ trabajo.tercerizado_monto|moneda }}"
                   data-repuestos-count="{{ trabajo.repuestos_count_calc }}">
                 {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
                 <button type="submit" class="icon-btn icon-btn-danger" aria-label="Eliminar trabajo" title="Eliminar">
                     {% nav_icon 'trash' %}
                 </button>

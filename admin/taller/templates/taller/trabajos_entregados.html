@@ -1,35 +1,25 @@
 {% extends 'taller/base.html' %}
 {% load taller_extras %}
 
-{% block title %}En taller · Gestión Taller{% endblock %}
+{% block title %}Entregados · Gestión Taller{% endblock %}
 
 {% block content %}
 <div class="page-header-row">
-    <h1 class="page-title">En taller</h1>
-    <a href="{% url 'taller:trabajo_create' %}" class="btn btn-primary">
-        {% nav_icon 'plus' %}
-        <span>Nuevo trabajo</span>
-    </a>
+    <h1 class="page-title">Entregados</h1>
+    <div class="month-nav">
+        <a href="?mes={{ mes_anterior_valor }}{% if query %}&q={{ query|urlencode }}{% endif %}" class="month-nav-btn" aria-label="Mes anterior">&lsaquo;</a>
+        <span class="month-nav-label">{{ mes_fecha|date:"F Y"|capfirst }}</span>
+        {% if puede_avanzar %}
+            <a href="?mes={{ mes_siguiente_valor }}{% if query %}&q={{ query|urlencode }}{% endif %}" class="month-nav-btn" aria-label="Mes siguiente">&rsaquo;</a>
+        {% else %}
+            <span class="month-nav-btn month-nav-btn-disabled" aria-disabled="true">&rsaquo;</span>
+        {% endif %}
+    </div>
 </div>
 
 <div class="toolbar">
     <div class="search-form">
         <input type="text" id="trabajo-search" value="{{ query }}" placeholder="Buscar por cliente o número (T-0075)..." class="search-input" autocomplete="off">
-    </div>
-</div>
-
-<div class="filter-rows">
-    <div class="chip-group">
-        <a href="?q={{ query|urlencode }}{% if categoria_filter %}&categoria={{ categoria_filter }}{% endif %}" class="chip {% if not estado_filter %}active{% endif %}">Todos</a>
-        {% for value, label in estados_filtro %}
-            <a href="?q={{ query|urlencode }}&estado={{ value }}{% if categoria_filter %}&categoria={{ categoria_filter }}{% endif %}" class="chip {% if estado_filter == value %}active{% endif %}">{{ label }}</a>
-        {% endfor %}
-    </div>
-    <div class="chip-group">
-        <a href="?q={{ query|urlencode }}{% if estado_filter %}&estado={{ estado_filter }}{% endif %}" class="chip {% if not categoria_filter %}active{% endif %}">Todos</a>
-        {% for value, label in dispositivo_choices %}
-            <a href="?q={{ query|urlencode }}&categoria={{ value }}{% if estado_filter %}&estado={{ estado_filter }}{% endif %}" class="chip {% if categoria_filter == value %}active{% endif %}">{{ label }}</a>
-        {% endfor %}
     </div>
 </div>
 
@@ -50,11 +40,11 @@
             </tr>
         </thead>
         <tbody>
-            {% for trabajo in trabajos %}
+            {% for trabajo in entregados %}
                 {% include 'taller/_trabajo_row.html' %}
             {% empty %}
                 <tr>
-                    <td colspan="10" class="empty-state">No se encontraron trabajos.</td>
+                    <td colspan="10" class="empty-state">No hay trabajos entregados en este mes.</td>
                 </tr>
             {% endfor %}
         </tbody>
@@ -69,13 +59,10 @@
     var input = document.getElementById('trabajo-search');
     var rows = document.querySelectorAll('#trabajos-table-main tbody tr[data-cliente]');
     var emptyRow = document.getElementById('js-empty-row');
-    var chips = document.querySelectorAll('.chip-group .chip');
 
     if (!input) { return; }
 
     function normalizar(str) {
-        // NFD separa "í" en "i" + acento combinante (U+0300-U+036F);
-        // se descartan esos puntos de código para comparar sin tildes.
         return str.normalize('NFD').split('').filter(function (ch) {
             var code = ch.charCodeAt(0);
             return code < 0x0300 || code > 0x036f;
@@ -96,16 +83,6 @@
         if (emptyRow) {
             emptyRow.style.display = (rows.length > 0 && visibleCount === 0) ? '' : 'none';
         }
-
-        chips.forEach(function (chip) {
-            var url = new URL(chip.href, window.location.href);
-            if (term) {
-                url.searchParams.set('q', input.value.trim());
-            } else {
-                url.searchParams.delete('q');
-            }
-            chip.href = url.pathname + url.search;
-        });
     }
 
     input.addEventListener('input', applyFilter);

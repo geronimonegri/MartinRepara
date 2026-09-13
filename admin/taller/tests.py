@@ -241,9 +241,9 @@ class MesFueraDeRangoTests(TestCase):
         response = self.client.get(reverse('taller:pago_create'), {'mes': '2026-00'})
         self.assertEqual(response.status_code, 302)
 
-    def test_trabajos_list_mes_entregados_13_redirige(self):
+    def test_trabajos_entregados_mes_13_redirige(self):
         response = self.client.get(
-            reverse('taller:trabajos_list'), {'mes_entregados': '2026-13'}
+            reverse('taller:trabajos_entregados'), {'mes': '2026-13'}
         )
         self.assertEqual(response.status_code, 302)
 
@@ -1810,7 +1810,7 @@ class RepuestosUsadosChipsEnListaDeTrabajosTests(TestCase):
         )
         RepuestoUsado.objects.create(trabajo=trabajo, gasto=gasto, cantidad=1)
 
-        response = self.client.get(reverse('taller:trabajos_list'), {'mes_entregados': '2026-07'})
+        response = self.client.get(reverse('taller:trabajos_entregados'), {'mes': '2026-07'})
         self.assertContains(response, 'Batería · Samsung Galaxy A52')
 
     def test_sin_repuestos_no_muestra_nada(self):
@@ -2322,3 +2322,153 @@ class GastosHistorialMostrarMasTests(TestCase):
         )
         self.assertNotContains(con_filtro, 'id="gastos-toggle-btn"')
         self.assertEqual(len(con_filtro.context['gastos_mes']), 3)
+
+
+class TrabajosEnTallerYEntregadosSeparadosTests(TestCase):
+    """"En taller" (/trabajos/) y "Entregados" (/trabajos/entregados/) son
+    pantallas separadas: cada trabajo aparece en una sola, según su
+    estado, y el cambio de estado lo mueve de una a la otra."""
+
+    def setUp(self):
+        self.tipo_celular = TipoDispositivo.objects.get(nombre='Celular')
+        self.cliente = Cliente.objects.create(nombre='Carla Ramírez', telefono='11-0000-0040')
+
+    def _trabajo(self, **kwargs):
+        datos = dict(
+            cliente=self.cliente, tipo_dispositivo=self.tipo_celular,
+            descripcion_problema='test', precio_acordado=Decimal('10000'),
+            fecha_ingreso=date(2026, 7, 1),
+        )
+        datos.update(kwargs)
+        return Trabajo.objects.create(**datos)
+
+    def test_en_taller_no_muestra_entregados(self):
+        activo = self._trabajo(estado=Trabajo.Estado.EN_REPARACION)
+        entregado = self._trabajo(estado=Trabajo.Estado.ENTREGADO, fecha_entrega=date(2026, 7, 5))
+
+        response = self.client.get(reverse('taller:trabajos_list'))
+        numeros = [t.numero for t in response.context['trabajos']]
+        self.assertIn(activo.numero, numeros)
+        self.assertNotIn(entregado.numero, numeros)
+
+    def test_entregados_no_muestra_trabajos_en_taller(self):
+        activo = self._trabajo(estado=Trabajo.Estado.LISTO)
+        entregado = self._trabajo(estado=Trabajo.Estado.ENTREGADO, fecha_entrega=date(2026, 7, 5))
+
+        response = self.client.get(reverse('taller:trabajos_entregados'), {'mes': '2026-07'})
+        numeros = [t.numero for t in response.context['entregados']]
+        self.assertIn(entregado.numero, numeros)
+        self.assertNotIn(activo.numero, numeros)
+
+    def test_en_taller_no_filtra_por_mes(self):
+        viejo = self._trabajo(estado=Trabajo.Estado.RECIBIDO, fecha_ingreso=date(2020, 1, 1))
+        response = self.client.get(reverse('taller:trabajos_list'))
+        numeros = [t.numero for t in response.context['trabajos']]
+        self.assertIn(viejo.numero, numeros)
+
+    def test_en_taller_respeta_filtro_de_estado_sin_entregado_como_opcion(self):
+        response = self.client.get(reverse('taller:trabajos_list'))
+        valores = [value for value, _ in response.context['estados_filtro']]
+        self.assertNotIn(Trabajo.Estado.ENTREGADO, valores)
+
+    def test_en_taller_filtro_de_estado_funciona(self):
+        listo = self._trabajo(estado=Trabajo.Estado.LISTO)
+        recibido = self._trabajo(estado=Trabajo.Estado.RECIBIDO)
+        response = self.client.get(reverse('taller:trabajos_list'), {'estado': 'listo'})
+        numeros = [t.numero for t in response.context['trabajos']]
+        self.assertIn(listo.numero, numeros)
+        self.assertNotIn(recibido.numero, numeros)
+
+    def test_entregados_respeta_el_mes_seleccionado(self):
+        de_julio = self._trabajo(estado=Trabajo.Estado.ENTREGADO, fecha_entrega=date(2026, 7, 5))
+        de_agosto = self._trabajo(estado=Trabajo.Estado.ENTREGADO, fecha_entrega=date(2026, 8, 5))
+
+        response = self.client.get(reverse('taller:trabajos_entregados'), {'mes': '2026-07'})
+        numeros = [t.numero for t in response.context['entregados']]
+        self.assertIn(de_julio.numero, numeros)
+        self.assertNotIn(de_agosto.numero, numeros)
+
+    def test_cambiar_a_entregado_lo_mueve_de_en_taller_a_entregados(self):
+        trabajo = self._trabajo(estado=Trabajo.Estado.LISTO)
+        self.client.post(
+            reverse('taller:trabajo_estado_update', args=[trabajo.pk]),
+            data={'estado': 'entregado', 'fecha_entrega': '2026-07-10'},
+        )
+
+        en_taller = self.client.get(reverse('taller:trabajos_list'))
+        self.assertNotIn(trabajo.numero, [t.numero for t in en_taller.context['trabajos']])
+
+        entregados = self.client.get(reverse('taller:trabajos_entregados'), {'mes': '2026-07'})
+        self.assertIn(trabajo.numero, [t.numero for t in entregados.context['entregados']])
+
+    def test_mensaje_de_entregado_con_link_a_entregados(self):
+        trabajo = self._trabajo(estado=Trabajo.Estado.LISTO)
+        response = self.client.post(
+            reverse('taller:trabajo_estado_update', args=[trabajo.pk]),
+            data={'estado': 'entregado', 'fecha_entrega': '2026-07-10'},
+            follow=True,
+        )
+        mensajes = [str(m) for m in response.context['messages']]
+        self.assertTrue(any(f'{trabajo.numero} entregado.' in m and 'Ver en Entregados.' in m for m in mensajes))
+        self.assertTrue(any(
+            f"{reverse('taller:trabajos_entregados')}?mes=2026-07" in m for m in mensajes
+        ))
+
+    def test_retroceder_desde_entregado_lo_vuelve_a_en_taller(self):
+        trabajo = self._trabajo(estado=Trabajo.Estado.ENTREGADO, fecha_entrega=date(2026, 7, 5))
+        self.client.post(
+            reverse('taller:trabajo_estado_update', args=[trabajo.pk]),
+            data={'estado': 'listo'},
+        )
+
+        entregados = self.client.get(reverse('taller:trabajos_entregados'), {'mes': '2026-07'})
+        self.assertNotIn(trabajo.numero, [t.numero for t in entregados.context['entregados']])
+
+        en_taller = self.client.get(reverse('taller:trabajos_list'))
+        self.assertIn(trabajo.numero, [t.numero for t in en_taller.context['trabajos']])
+
+    def test_editar_desde_entregados_vuelve_a_entregados(self):
+        trabajo = self._trabajo(estado=Trabajo.Estado.ENTREGADO, fecha_entrega=date(2026, 7, 5))
+        origen = f"{reverse('taller:trabajos_entregados')}?mes=2026-07"
+        response = self.client.post(
+            f"{reverse('taller:trabajo_edit', args=[trabajo.pk])}?next={origen}",
+            data={
+                'cliente_nombre': self.cliente.nombre, 'cliente_telefono': self.cliente.telefono,
+                'tipo_dispositivo': self.tipo_celular.pk, 'descripcion_problema': 'test',
+                'precio_acordado': '10000', 'fecha_ingreso': '2026-07-01',
+                'fecha_entrega': '2026-07-05',
+                'tercero': '', 'tercerizado_detalle': '', 'tercerizado_monto': '',
+                'repuestos_usados-TOTAL_FORMS': '0', 'repuestos_usados-INITIAL_FORMS': '0',
+                'repuestos_usados-MIN_NUM_FORMS': '0', 'repuestos_usados-MAX_NUM_FORMS': '1000',
+            },
+        )
+        self.assertRedirects(response, origen)
+
+    def test_editar_sin_next_vuelve_a_en_taller(self):
+        trabajo = self._trabajo(estado=Trabajo.Estado.LISTO)
+        response = self.client.post(
+            reverse('taller:trabajo_edit', args=[trabajo.pk]),
+            data={
+                'cliente_nombre': self.cliente.nombre, 'cliente_telefono': self.cliente.telefono,
+                'tipo_dispositivo': self.tipo_celular.pk, 'descripcion_problema': 'test',
+                'precio_acordado': '10000', 'fecha_ingreso': '2026-07-01',
+                'tercero': '', 'tercerizado_detalle': '', 'tercerizado_monto': '',
+                'repuestos_usados-TOTAL_FORMS': '0', 'repuestos_usados-INITIAL_FORMS': '0',
+                'repuestos_usados-MIN_NUM_FORMS': '0', 'repuestos_usados-MAX_NUM_FORMS': '1000',
+            },
+        )
+        self.assertRedirects(response, reverse('taller:trabajos_list'))
+
+    def test_eliminar_desde_entregados_vuelve_a_entregados(self):
+        trabajo = self._trabajo(estado=Trabajo.Estado.ENTREGADO, fecha_entrega=date(2026, 7, 5))
+        origen = f"{reverse('taller:trabajos_entregados')}?mes=2026-07"
+        response = self.client.post(
+            reverse('taller:trabajo_delete', args=[trabajo.pk]), data={'next': origen},
+        )
+        self.assertRedirects(response, origen)
+        self.assertFalse(Trabajo.objects.filter(pk=trabajo.pk).exists())
+
+    def test_numero_en_la_fila_para_buscar_por_numero(self):
+        trabajo = self._trabajo(estado=Trabajo.Estado.LISTO)
+        response = self.client.get(reverse('taller:trabajos_list'))
+        self.assertContains(response, f'data-numero="{trabajo.numero.lower()}"')

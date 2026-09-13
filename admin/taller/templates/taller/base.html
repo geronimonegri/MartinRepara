@@ -18,10 +18,20 @@
                     {% nav_icon 'dashboard' %}
                     <span>Dashboard</span>
                 </a>
-                <a href="{% url 'taller:trabajos_list' %}" class="nav-item {% if request.resolver_match.url_name == 'trabajos_list' or request.resolver_match.url_name == 'trabajo_create' or request.resolver_match.url_name == 'trabajo_edit' %}active{% endif %}">
-                    {% nav_icon 'list' %}
-                    <span>Trabajos</span>
-                </a>
+                <div class="nav-group">
+                    <a href="{% url 'taller:trabajos_list' %}" class="nav-item nav-group-label">
+                        {% nav_icon 'list' %}
+                        <span>Trabajos</span>
+                    </a>
+                    <div class="nav-subitems">
+                        <a href="{% url 'taller:trabajos_list' %}" class="nav-item nav-subitem {% if request.resolver_match.url_name == 'trabajos_list' or request.resolver_match.url_name == 'trabajo_create' or request.resolver_match.url_name == 'trabajo_edit' and 'entregados' not in request.GET.next %}active{% endif %}">
+                            <span>En taller</span>
+                        </a>
+                        <a href="{% url 'taller:trabajos_entregados' %}" class="nav-item nav-subitem {% if request.resolver_match.url_name == 'trabajos_entregados' or request.resolver_match.url_name == 'trabajo_edit' and 'entregados' in request.GET.next %}active{% endif %}">
+                            <span>Entregados</span>
+                        </a>
+                    </div>
+                </div>
                 <a href="{% url 'taller:balance' %}" class="nav-item {% if request.resolver_match.url_name == 'balance' %}active{% endif %}">
                     {% nav_icon 'bar-chart' %}
                     <span>Balance</span>
