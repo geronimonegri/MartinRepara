@@ -1,5 +1,5 @@
 {% extends 'taller/base.html' %}
-{% load taller_extras %}
+{% load static taller_extras %}
 
 {% block title %}{% if form.instance.pk %}Editar pago {{ form.instance.numero }}{% else %}Nuevo pago{% endif %} · Gestión Taller{% endblock %}
 
@@ -108,7 +108,15 @@
     </div>
 </div>
 
+<script src="{% static 'taller/js/combobox_buscable.js' %}"></script>
 <script>
+(function () {
+    var selectTrabajo = document.getElementById('id_trabajo');
+    if (selectTrabajo) {
+        iniciarComboboxBuscable(selectTrabajo, { placeholder: 'Buscar por número o cliente...' });
+    }
+})();
+
 (function () {
     var toggleBtn = document.getElementById('pagos-toggle-btn');
     var extraRows = document.querySelectorAll('#pagos-history-list .gasto-history-row-extra');

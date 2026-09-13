@@ -14,6 +14,7 @@ from django.utils.dateparse import parse_date
 from django.views.decorators.http import require_POST
 
 from . import analytics
+from .templatetags.taller_extras import repuesto_usado_chip
 from .forms import (
     CategoriaGastoForm,
     GastoForm,
@@ -209,13 +210,36 @@ def trabajo_create(request):
 
 def trabajo_edit(request, pk):
     trabajo = get_object_or_404(Trabajo, pk=pk)
+    # Se lee ANTES de construir/validar el form: ModelForm._post_clean()
+    # ya deja tercerizado_monto con el valor nuevo en trabajo (mismo
+    # objeto que instance) apenas se llama is_valid(), así que después de
+    # eso ya sería tarde para saber cómo estaba antes.
+    tenia_tercerizacion = bool(trabajo.tercerizado_monto)
 
     if request.method == 'POST':
         form = TrabajoForm(request.POST, instance=trabajo)
         formset = RepuestoUsadoFormSet(request.POST, instance=trabajo)
         if form.is_valid() and formset.is_valid():
+            devueltos = [
+                (f.instance.cantidad, repuesto_usado_chip(f.instance))
+                for f in formset.deleted_forms if f.instance.pk
+            ]
             form.save()
             formset.save()
+
+            if devueltos:
+                etiquetas = [f'{cantidad} {label}' for cantidad, label in devueltos]
+                if len(etiquetas) == 1:
+                    frase = f'Se devolvió {etiquetas[0]} al stock.'
+                else:
+                    frase = 'Se devolvieron ' + ', '.join(etiquetas[:-1]) + f' y {etiquetas[-1]} al stock.'
+                messages.success(request, f'Trabajo guardado. {frase}')
+
+            if tenia_tercerizacion and not trabajo.tercerizado_monto:
+                messages.success(
+                    request,
+                    f'Tercerización eliminada. {trabajo.numero} ya no tiene tercerización.',
+                )
             return redirect('taller:trabajos_list')
     else:
         form = TrabajoForm(instance=trabajo, initial={
@@ -259,7 +283,7 @@ def _gasto_historial_context(request):
 
     categoria_filter = request.GET.get('categoria', '').strip()
     gastos_mes = (
-        Gasto.objects.select_related('categoria', 'subcategoria', 'tipo_repuesto')
+        Gasto.objects.select_related('categoria', 'subcategoria', 'tipo_repuesto', 'trabajo__tercero')
         .annotate(usos_count=Count('usos'))
         .filter(fecha__year=anio, fecha__month=mes)
     )
@@ -314,6 +338,13 @@ def gasto_create(request):
 
 def gasto_edit(request, pk):
     gasto = get_object_or_404(Gasto, pk=pk)
+    # Desde Stock, cada fila linkea acá con ?next=/stock/... para volver
+    # ahí en vez de a Gastos al cancelar o guardar (mismo patrón que el
+    # 'next' de trabajo_estado_update, pero por query string en vez de
+    # campo de POST porque acá se llega con un link GET, no un form).
+    # Al no tener el <form> un action propio, postea a esta misma URL, así
+    # que el query string (con next incluido) sigue presente en el POST.
+    next_url = request.GET.get('next')
 
     # Los gastos "Tercerizado" los genera solo _sincronizar_gasto_tercerizado()
     # desde un Trabajo: no se editan desde acá, se edita el trabajo.
@@ -330,6 +361,8 @@ def gasto_edit(request, pk):
         form = GastoForm(request.POST, instance=gasto)
         if form.is_valid():
             gasto = form.save()
+            if next_url:
+                return redirect(next_url)
             mes_valor = f'{gasto.fecha.year:04d}-{gasto.fecha.month:02d}'
             return redirect(f"{reverse('taller:gasto_create')}?mes={mes_valor}")
     else:
@@ -339,7 +372,7 @@ def gasto_edit(request, pk):
     if historial is None:
         return redirect(request.path)
 
-    context = {'form': form}
+    context = {'form': form, 'next_url': next_url}
     context.update(historial)
     context.update(_gasto_form_catalogos())
     return render(request, 'taller/gasto_form.html', context)
@@ -350,15 +383,22 @@ def gasto_delete(request, pk):
     gasto = get_object_or_404(Gasto, pk=pk)
     next_url = request.POST.get('next') or reverse('taller:gasto_create')
 
-    # Si todavía está vinculado a un trabajo, ese trabajo es su dueño (se
-    # borra junto con él, o se actualiza si cambia el monto tercerizado):
-    # no se toca desde acá. Uno sin trabajo (no debería pasar con el
-    # vínculo en CASCADE, pero por las dudas) sí se puede borrar normal.
-    if gasto.categoria.nombre == 'Tercerizado' and gasto.trabajo_id:
-        messages.error(
-            request,
-            'Este gasto se generó automáticamente desde un trabajo tercerizado y no se puede eliminar acá.',
-        )
+    # Un Tercerizado sí se puede eliminar desde acá: el trabajo que lo
+    # generó sigue existiendo, solo se le vacían los campos de
+    # tercerización (si tenía trabajo — uno sin trabajo no debería pasar
+    # con el vínculo en CASCADE, pero por las dudas se borra igual).
+    if gasto.categoria.nombre == 'Tercerizado':
+        trabajo = gasto.trabajo
+        gasto.delete()
+        if trabajo:
+            trabajo.tercero = None
+            trabajo.tercerizado_detalle = ''
+            trabajo.tercerizado_monto = None
+            trabajo.save(update_fields=['tercero', 'tercerizado_detalle', 'tercerizado_monto'])
+            messages.success(
+                request,
+                f'Tercerización eliminada. {trabajo.numero} ya no tiene tercerización.',
+            )
         return redirect(next_url)
 
     try:
@@ -732,20 +772,20 @@ CATALOGOS = {
     },
     'tipo_repuesto': {
         'model': TipoRepuesto, 'form': TipoRepuestoForm, 'label': 'Subcategorías de repuestos',
-        'select_related': ['tipo_dispositivo'],
+        'select_related': ['tipo_dispositivo'], 'agrupar_por': 'tipo_dispositivo',
     },
     'marca': {
         'model': Marca, 'form': MarcaForm, 'label': 'Marcas',
-        'select_related': ['tipo_dispositivo'],
+        'select_related': ['tipo_dispositivo'], 'agrupar_por': 'tipo_dispositivo',
     },
     'modelo': {
         'model': Modelo, 'form': ModeloForm, 'label': 'Modelos',
-        'select_related': ['marca'],
+        'select_related': ['marca'], 'agrupar_por': 'marca',
     },
     'proveedor': {'model': Proveedor, 'form': ProveedorForm, 'label': 'Proveedores'},
     'tipo_reparacion': {
         'model': TipoReparacion, 'form': TipoReparacionForm, 'label': 'Tipos de reparación',
-        'select_related': ['tipo_dispositivo'],
+        'select_related': ['tipo_dispositivo'], 'agrupar_por': 'tipo_dispositivo',
     },
     'tercero': {'model': Tercero, 'form': TerceroForm, 'label': 'Terceros'},
 }
@@ -776,13 +816,33 @@ def configuracion(request, tab='tipo_dispositivo', pk=None):
 
     items = Modelo_.objects.select_related(*info.get('select_related', [])).all()
 
+    # Agrupar por tipo de dispositivo (o por marca, en Modelos) para que
+    # la lista sea escaneable sin tener que buscar: cada catálogo con esa
+    # relación queda ordenado primero por el grupo (su propio 'orden') y
+    # dentro de cada uno por el orden/nombre habitual del ítem.
+    agrupar_por = info.get('agrupar_por')
+    total_items = items.count()
+    if agrupar_por:
+        items = items.order_by(f'{agrupar_por}__orden', f'{agrupar_por}__nombre', 'orden', 'nombre')
+        grupos = []
+        grupo_actual = None
+        for item in items:
+            nombre_grupo = getattr(item, agrupar_por).nombre
+            if grupo_actual is None or grupo_actual['nombre'] != nombre_grupo:
+                grupo_actual = {'nombre': nombre_grupo, 'items': []}
+                grupos.append(grupo_actual)
+            grupo_actual['items'].append(item)
+    else:
+        grupos = [{'nombre': None, 'items': list(items)}]
+
     return render(request, 'taller/configuracion.html', {
         'tabs': [(clave, CATALOGOS[clave]['label']) for clave in ORDEN_TABS],
         'tab_actual': tab,
         'label_actual': info['label'],
         'form': form,
         'editando': instancia,
-        'items': items,
+        'grupos': grupos,
+        'total_items': total_items,
     })
 
 

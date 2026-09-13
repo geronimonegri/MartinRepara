@@ -508,7 +508,11 @@ class PagoForm(forms.ModelForm):
             Trabajo.objects.select_related('cliente', 'tipo_dispositivo')
             .annotate(pagado=Sum('pagos__monto'))
             .filter(pk__in=pks_permitidos)
-            .order_by('-fecha_ingreso')
+            # Por número (no por fecha_ingreso): es lo que espera ver el
+            # combobox de búsqueda del form (más nuevo arriba). numero es
+            # un CharField con relleno de ceros de ancho fijo ("T-0001"),
+            # así que el orden alfabético coincide con el numérico.
+            .order_by('-numero')
         )
         self.fields['trabajo'].label_from_instance = self._trabajo_label
         self.fields['trabajo'].empty_label = None
@@ -518,15 +522,15 @@ class PagoForm(forms.ModelForm):
         # trabajo.pagado viene de la anotación Sum('pagos__monto') del
         # queryset de arriba: evita un query aparte por cada opción del
         # <select> (N+1) al renderizar el formulario.
-        base = f'{trabajo.numero} - {trabajo.cliente.nombre} - {trabajo.tipo_dispositivo.nombre}'
+        base = f'{trabajo.numero} · {trabajo.cliente.nombre} · {trabajo.tipo_dispositivo.nombre}'
         if trabajo.precio_acordado is None:
             return base
         pagado = trabajo.pagado or Decimal('0')
         saldo = trabajo.precio_acordado - pagado
         if saldo <= 0:
-            return f'{base} (pagado)'
+            return f'{base} · pagado'
         formateado = f'{int(round(saldo)):,}'.replace(',', '.')
-        return f'{base} (falta ${formateado})'
+        return f'{base} · falta ${formateado}'
 
 
 # Django muestra "---------" por defecto en cualquier ModelChoiceField

@@ -31,23 +31,29 @@
                 <th>Tipo de repuesto</th>
                 <th>Marca / Modelo</th>
                 <th>Proveedor</th>
+                <th>Fecha</th>
                 <th>Precio unitario</th>
                 <th>Disponible</th>
             </tr>
         </thead>
         <tbody>
             {% for item in items %}
-                <tr data-buscar="{{ item.numero|lower }} {{ item.tipo_repuesto.nombre|lower }} {{ item.marca.nombre|lower }} {{ item.modelo.nombre|lower }} {{ item.proveedor.nombre|lower }}">
-                    <td class="numero-cell">{{ item.numero }}</td>
+                {% url 'taller:gasto_edit' item.pk as gasto_edit_url %}
+                <tr class="stock-row-link" data-href="{{ gasto_edit_url }}?next={{ request.get_full_path|urlencode }}"
+                    data-buscar="{{ item.numero|lower }} {{ item.tipo_repuesto.nombre|lower }} {{ item.marca.nombre|lower }} {{ item.modelo.nombre|lower }} {{ item.proveedor.nombre|lower }}">
+                    <td class="numero-cell">
+                        <a href="{{ gasto_edit_url }}?next={{ request.get_full_path|urlencode }}">{{ item.numero }}</a>
+                    </td>
                     <td>{{ item.tipo_repuesto.nombre|default:"—" }}</td>
                     <td>{{ item.marca.nombre|default:"" }} {{ item.modelo.nombre|default:"" }}{% if not item.marca and not item.modelo %}—{% endif %}</td>
                     <td>{{ item.proveedor.nombre|default:"—" }}</td>
+                    <td>{{ item.fecha|date:"d/m/Y" }}</td>
                     <td>{{ item.precio_unitario|moneda }}</td>
                     <td>{{ item.stock_disponible }}</td>
                 </tr>
             {% empty %}
                 <tr>
-                    <td colspan="6" class="empty-state">No hay repuestos con stock disponible.</td>
+                    <td colspan="7" class="empty-state">No hay repuestos con stock disponible.</td>
                 </tr>
             {% endfor %}
         </tbody>
@@ -93,6 +99,17 @@
 
     input.addEventListener('input', applyFilter);
     applyFilter();
+})();
+
+(function () {
+    document.querySelectorAll('#stock-table tbody tr[data-href]').forEach(function (row) {
+        row.addEventListener('click', function (event) {
+            // Si el click fue sobre el link del número, que navegue él
+            // solo (mantiene click-derecho / abrir en pestaña nueva).
+            if (event.target.closest('a')) { return; }
+            window.location.href = row.getAttribute('data-href');
+        });
+    });
 })();
 </script>
 {% endblock %}

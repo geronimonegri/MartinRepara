@@ -800,8 +800,10 @@ class GastoRepuestoUsadoProteccionTests(TestCase):
 
 
 class GastoTercerizadoEditarEliminarTests(TestCase):
-    """Los gastos "Tercerizado" no se editan ni eliminan desde Gastos: se
-    generan solos desde un Trabajo, y el ícono lleva a ese trabajo."""
+    """Los gastos "Tercerizado" no se editan desde Gastos (se generan
+    solos desde un Trabajo, y el ícono lleva a ese trabajo), pero sí se
+    pueden eliminar directamente: el trabajo sobrevive intacto, solo se
+    le vacían los campos de tercerización."""
 
     def setUp(self):
         self.tipo_celular = TipoDispositivo.objects.get(nombre='Celular')
@@ -811,7 +813,8 @@ class GastoTercerizadoEditarEliminarTests(TestCase):
             cliente=cliente, tipo_dispositivo=self.tipo_celular,
             descripcion_problema='test', precio_acordado=Decimal('10000'),
             fecha_ingreso=date(2026, 7, 1),
-            tercero=self.tercero, tercerizado_monto=Decimal('3000'),
+            tercero=self.tercero, tercerizado_detalle='cambio de módulo',
+            tercerizado_monto=Decimal('3000'),
         )
         _sincronizar_gasto_tercerizado(self.trabajo)
         self.gasto = Gasto.objects.get(trabajo=self.trabajo)
@@ -820,13 +823,32 @@ class GastoTercerizadoEditarEliminarTests(TestCase):
         response = self.client.get(reverse('taller:gasto_edit', args=[self.gasto.pk]))
         self.assertRedirects(response, reverse('taller:trabajo_edit', args=[self.trabajo.pk]))
 
-    def test_no_se_puede_eliminar(self):
+    def test_eliminar_borra_el_gasto_y_el_trabajo_sobrevive(self):
         response = self.client.post(
             reverse('taller:gasto_delete', args=[self.gasto.pk]), follow=True
         )
-        self.assertTrue(Gasto.objects.filter(pk=self.gasto.pk).exists())
+        self.assertFalse(Gasto.objects.filter(pk=self.gasto.pk).exists())
+
+        self.trabajo.refresh_from_db()
+        self.assertTrue(Trabajo.objects.filter(pk=self.trabajo.pk).exists())
+        self.assertIsNone(self.trabajo.tercero)
+        self.assertEqual(self.trabajo.tercerizado_detalle, '')
+        self.assertIsNone(self.trabajo.tercerizado_monto)
+        # El resto del trabajo queda intacto.
+        self.assertEqual(self.trabajo.descripcion_problema, 'test')
+        self.assertEqual(self.trabajo.precio_acordado, Decimal('10000'))
+
         mensajes = [str(m) for m in response.context['messages']]
-        self.assertTrue(any('no se puede eliminar' in m for m in mensajes))
+        self.assertTrue(any(
+            f'Tercerización eliminada. {self.trabajo.numero} ya no tiene tercerización.' in m
+            for m in mensajes
+        ))
+
+    def test_eliminar_recalcula_la_ganancia(self):
+        self.assertEqual(self.trabajo.ganancia, Decimal('7000'))  # 10000 - 3000
+        self.client.post(reverse('taller:gasto_delete', args=[self.gasto.pk]))
+        self.trabajo.refresh_from_db()
+        self.assertEqual(self.trabajo.ganancia, Decimal('10000'))
 
     def test_no_aparece_en_el_select_de_categoria_de_gastos(self):
         nombres = [c.nombre for c in GastoForm().fields['categoria'].queryset]
@@ -1924,3 +1946,334 @@ class EstadisticasGraficosJsonTests(TestCase):
         self.assertContains(response, 'data-reparaciones-metrica="top"')
         self.assertContains(response, 'data-metrica="margen_pct"')
         self.assertContains(response, 'data-metrica="ganancia_total"')
+
+
+class QuitarTercerizacionDesdeElTrabajoTests(TestCase):
+    """Vaciar tercero/tercerizado_detalle/tercerizado_monto en el POST de
+    trabajo_edit borra el gasto Tercerizado vinculado: el trabajo
+    sobrevive y la ganancia se recalcula sola (es una property que lee
+    tercerizado_monto directo)."""
+
+    def setUp(self):
+        self.tipo_celular = TipoDispositivo.objects.get(nombre='Celular')
+        self.tercero = Tercero.objects.create(nombre='ElectroFix')
+        self.cliente = Cliente.objects.create(nombre='Cliente Quitar Terc', telefono='11-0000-0020')
+        self.trabajo = Trabajo.objects.create(
+            cliente=self.cliente, tipo_dispositivo=self.tipo_celular,
+            descripcion_problema='test', precio_acordado=Decimal('10000'),
+            fecha_ingreso=date(2026, 7, 1),
+            tercero=self.tercero, tercerizado_detalle='cambio de módulo',
+            tercerizado_monto=Decimal('8000'),
+        )
+        _sincronizar_gasto_tercerizado(self.trabajo)
+        self.gasto = Gasto.objects.get(trabajo=self.trabajo)
+
+    def _datos_base(self, **overrides):
+        datos = {
+            'cliente_nombre': self.cliente.nombre,
+            'cliente_telefono': self.cliente.telefono,
+            'tipo_dispositivo': self.tipo_celular.pk,
+            'descripcion_problema': 'test',
+            'precio_acordado': '10000',
+            'fecha_ingreso': '2026-07-01',
+            'tercero': '',
+            'tercerizado_detalle': '',
+            'tercerizado_monto': '',
+            'repuestos_usados-TOTAL_FORMS': '0',
+            'repuestos_usados-INITIAL_FORMS': '0',
+            'repuestos_usados-MIN_NUM_FORMS': '0',
+            'repuestos_usados-MAX_NUM_FORMS': '1000',
+        }
+        datos.update(overrides)
+        return datos
+
+    def test_vaciar_los_campos_borra_el_gasto_y_el_trabajo_sobrevive(self):
+        response = self.client.post(
+            reverse('taller:trabajo_edit', args=[self.trabajo.pk]), data=self._datos_base(), follow=True,
+        )
+        self.assertFalse(Gasto.objects.filter(pk=self.gasto.pk).exists())
+
+        self.trabajo.refresh_from_db()
+        self.assertTrue(Trabajo.objects.filter(pk=self.trabajo.pk).exists())
+        self.assertIsNone(self.trabajo.tercero)
+        self.assertEqual(self.trabajo.tercerizado_detalle, '')
+        self.assertIsNone(self.trabajo.tercerizado_monto)
+
+        mensajes = [str(m) for m in response.context['messages']]
+        self.assertTrue(any(
+            f'Tercerización eliminada. {self.trabajo.numero} ya no tiene tercerización.' in m
+            for m in mensajes
+        ))
+
+    def test_vaciar_los_campos_recalcula_la_ganancia(self):
+        self.assertEqual(self.trabajo.ganancia, Decimal('2000'))  # 10000 - 8000
+        self.client.post(reverse('taller:trabajo_edit', args=[self.trabajo.pk]), data=self._datos_base())
+        self.trabajo.refresh_from_db()
+        self.assertEqual(self.trabajo.ganancia, Decimal('10000'))
+
+    def test_guardar_sin_tocar_la_tercerizacion_no_muestra_mensaje(self):
+        response = self.client.post(
+            reverse('taller:trabajo_edit', args=[self.trabajo.pk]),
+            data=self._datos_base(
+                tercero=self.tercero.pk, tercerizado_detalle='cambio de módulo', tercerizado_monto='8000',
+            ),
+            follow=True,
+        )
+        self.assertTrue(Gasto.objects.filter(pk=self.gasto.pk).exists())
+        mensajes = [str(m) for m in response.context['messages']]
+        self.assertFalse(any('Tercerización eliminada' in m for m in mensajes))
+
+
+class DevolucionDeStockAlQuitarRepuestoEnEdicionTests(TestCase):
+    """Sacar un repuesto usado (checkbox DELETE del formset) en el form de
+    edición de un Trabajo devuelve su cantidad al stock del gasto de
+    compra y avisa qué se devolvió."""
+
+    def setUp(self):
+        self.tipo_celular = TipoDispositivo.objects.get(nombre='Celular')
+        self.cat_repuestos = CategoriaGasto.objects.get(nombre='Repuestos')
+        self.cliente = Cliente.objects.create(nombre='Cliente Devolver Stock', telefono='11-0000-0021')
+        self.trabajo = Trabajo.objects.create(
+            cliente=self.cliente, tipo_dispositivo=self.tipo_celular,
+            descripcion_problema='test', precio_acordado=Decimal('10000'),
+            fecha_ingreso=date(2026, 7, 1),
+        )
+        self.gasto = Gasto.objects.create(
+            descripcion='Batería', categoria=self.cat_repuestos, fecha=date(2026, 7, 1),
+            marca=Marca.objects.filter(tipo_dispositivo=self.tipo_celular).first(),
+            cantidad=5, precio_unitario=Decimal('1000'), monto=Decimal('5000'),
+        )
+        self.ru = RepuestoUsado.objects.create(trabajo=self.trabajo, gasto=self.gasto, cantidad=1)
+        self.gasto.refresh_from_db()
+
+    def _datos_base(self, **overrides):
+        datos = {
+            'cliente_nombre': self.cliente.nombre,
+            'cliente_telefono': self.cliente.telefono,
+            'tipo_dispositivo': self.tipo_celular.pk,
+            'descripcion_problema': 'test',
+            'precio_acordado': '10000',
+            'fecha_ingreso': '2026-07-01',
+            'tercero': '', 'tercerizado_detalle': '', 'tercerizado_monto': '',
+            'repuestos_usados-TOTAL_FORMS': '1',
+            'repuestos_usados-INITIAL_FORMS': '1',
+            'repuestos_usados-MIN_NUM_FORMS': '0',
+            'repuestos_usados-MAX_NUM_FORMS': '1000',
+            'repuestos_usados-0-id': self.ru.pk,
+            'repuestos_usados-0-gasto': self.gasto.pk,
+            'repuestos_usados-0-cantidad': '1',
+        }
+        datos.update(overrides)
+        return datos
+
+    def test_marcar_delete_devuelve_el_stock(self):
+        self.assertEqual(self.gasto.stock_disponible, 4)  # 5 - 1
+        self.client.post(
+            reverse('taller:trabajo_edit', args=[self.trabajo.pk]),
+            data=self._datos_base(**{'repuestos_usados-0-DELETE': 'on'}),
+        )
+        self.gasto.refresh_from_db()
+        self.assertEqual(self.gasto.stock_disponible, 5)
+        self.assertFalse(RepuestoUsado.objects.filter(pk=self.ru.pk).exists())
+
+    def test_mensaje_de_exito_incluye_lo_que_volvio_al_stock(self):
+        response = self.client.post(
+            reverse('taller:trabajo_edit', args=[self.trabajo.pk]),
+            data=self._datos_base(**{'repuestos_usados-0-DELETE': 'on'}),
+            follow=True,
+        )
+        etiqueta = repuesto_usado_chip(self.ru)
+        mensajes = [str(m) for m in response.context['messages']]
+        self.assertTrue(any(
+            f'Trabajo guardado. Se devolvió 1 {etiqueta} al stock.' in m for m in mensajes
+        ))
+
+    def test_guardar_sin_tocar_repuestos_no_muestra_mensaje_de_stock(self):
+        response = self.client.post(
+            reverse('taller:trabajo_edit', args=[self.trabajo.pk]), data=self._datos_base(), follow=True,
+        )
+        self.assertTrue(RepuestoUsado.objects.filter(pk=self.ru.pk).exists())
+        mensajes = [str(m) for m in response.context['messages']]
+        self.assertFalse(any('devolv' in m for m in mensajes))
+
+
+class PagoTrabajoElegibleTests(TestCase):
+    """El <select>/combobox de "Trabajo asociado" solo ofrece trabajos con
+    saldo pendiente: la vista tiene que guardar el pago cuando se elige
+    uno de esos, y rechazar (sin guardar nada) un ID que no esté entre
+    los elegibles — sea porque no existe o porque ese trabajo ya está
+    pagado por completo."""
+
+    def setUp(self):
+        self.tipo_celular = TipoDispositivo.objects.get(nombre='Celular')
+        self.cliente = Cliente.objects.create(nombre='Cliente Pago Elegible', telefono='11-0000-0030')
+
+    def _trabajo(self, precio, **kwargs):
+        datos = dict(
+            cliente=self.cliente, tipo_dispositivo=self.tipo_celular,
+            descripcion_problema='test', precio_acordado=precio,
+            fecha_ingreso=date(2026, 7, 1),
+        )
+        datos.update(kwargs)
+        return Trabajo.objects.create(**datos)
+
+    def test_guarda_el_pago_con_el_trabajo_elegido(self):
+        trabajo = self._trabajo(Decimal('10000'))
+        response = self.client.post(reverse('taller:pago_create'), data={
+            'monto': '4000', 'forma_pago': Pago.FormaPago.EFECTIVO,
+            'fecha': '2026-07-05', 'trabajo': trabajo.pk, 'detalle': '',
+        })
+        self.assertRedirects(response, f"{reverse('taller:pago_create')}?mes=2026-07")
+        pago = Pago.objects.get()
+        self.assertEqual(pago.trabajo_id, trabajo.pk)
+        self.assertEqual(pago.monto, Decimal('4000'))
+
+    def test_rechaza_un_trabajo_ya_pagado_por_completo(self):
+        trabajo_pagado = self._trabajo(Decimal('5000'))
+        Pago.objects.create(
+            trabajo=trabajo_pagado, monto=Decimal('5000'),
+            forma_pago=Pago.FormaPago.EFECTIVO, fecha=date(2026, 7, 1),
+        )
+        response = self.client.post(reverse('taller:pago_create'), data={
+            'monto': '1000', 'forma_pago': Pago.FormaPago.EFECTIVO,
+            'fecha': '2026-07-05', 'trabajo': trabajo_pagado.pk, 'detalle': '',
+        })
+        self.assertEqual(response.status_code, 200)  # re-renderiza el form con error, no redirige
+        self.assertIn('trabajo', response.context['form'].errors)
+        self.assertEqual(Pago.objects.filter(trabajo=trabajo_pagado).count(), 1)  # el original, ninguno nuevo
+
+    def test_rechaza_un_id_de_trabajo_inexistente(self):
+        trabajo = self._trabajo(Decimal('10000'))
+        response = self.client.post(reverse('taller:pago_create'), data={
+            'monto': '1000', 'forma_pago': Pago.FormaPago.EFECTIVO,
+            'fecha': '2026-07-05', 'trabajo': trabajo.pk + 9999, 'detalle': '',
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('trabajo', response.context['form'].errors)
+        self.assertFalse(Pago.objects.exists())
+
+    def test_orden_del_select_es_por_numero_descendente(self):
+        mas_viejo = self._trabajo(Decimal('5000'))
+        mas_nuevo = self._trabajo(Decimal('5000'))
+        opciones = list(PagoForm().fields['trabajo'].queryset)
+        self.assertEqual(opciones[0].pk, mas_nuevo.pk)
+        self.assertEqual(opciones[1].pk, mas_viejo.pk)
+
+
+class ConfiguracionBusquedaYAgrupacionTests(TestCase):
+    """La pestaña de Configuración agrupa por tipo de dispositivo (o por
+    marca, en Modelos) y expone el total de ítems para el contador del
+    buscador de la lista (el filtrado en sí es JS, no se testea acá)."""
+
+    def test_marca_se_agrupa_por_tipo_dispositivo(self):
+        tipo_a = TipoDispositivo.objects.create(nombre='Dispositivo A')
+        tipo_b = TipoDispositivo.objects.create(nombre='Dispositivo B')
+        Marca.objects.create(nombre='Marca A1', tipo_dispositivo=tipo_a)
+        Marca.objects.create(nombre='Marca A2', tipo_dispositivo=tipo_a)
+        Marca.objects.create(nombre='Marca B1', tipo_dispositivo=tipo_b)
+
+        response = self.client.get(reverse('taller:configuracion_tab', args=['marca']))
+        grupos = response.context['grupos']
+        nombres_grupo = [g['nombre'] for g in grupos]
+        self.assertIn('Dispositivo A', nombres_grupo)
+        self.assertIn('Dispositivo B', nombres_grupo)
+
+        grupo_a = next(g for g in grupos if g['nombre'] == 'Dispositivo A')
+        self.assertEqual({m.nombre for m in grupo_a['items']}, {'Marca A1', 'Marca A2'})
+
+    def test_modelo_se_agrupa_por_marca_no_por_tipo_dispositivo(self):
+        tipo = TipoDispositivo.objects.get(nombre='Celular')
+        marca_x = Marca.objects.create(nombre='Marca X', tipo_dispositivo=tipo)
+        marca_y = Marca.objects.create(nombre='Marca Y', tipo_dispositivo=tipo)
+        Modelo.objects.create(nombre='Modelo X1', marca=marca_x)
+        Modelo.objects.create(nombre='Modelo Y1', marca=marca_y)
+
+        response = self.client.get(reverse('taller:configuracion_tab', args=['modelo']))
+        grupos = response.context['grupos']
+        nombres_grupo = [g['nombre'] for g in grupos]
+        self.assertIn('Marca X', nombres_grupo)
+        self.assertIn('Marca Y', nombres_grupo)
+
+    def test_catalogo_sin_relacion_no_se_agrupa(self):
+        response = self.client.get(reverse('taller:configuracion_tab', args=['tercero']))
+        grupos = response.context['grupos']
+        self.assertEqual(len(grupos), 1)
+        self.assertIsNone(grupos[0]['nombre'])
+
+    def test_total_items_coincide_con_la_cantidad_real(self):
+        cantidad_antes = Tercero.objects.count()
+        Tercero.objects.create(nombre='Tercero Nuevo Config Test')
+        response = self.client.get(reverse('taller:configuracion_tab', args=['tercero']))
+        self.assertEqual(response.context['total_items'], cantidad_antes + 1)
+
+    def test_pagina_incluye_el_buscador_y_el_contador(self):
+        Tercero.objects.create(nombre='Tercero Buscador Test')
+        response = self.client.get(reverse('taller:configuracion_tab', args=['tercero']))
+        self.assertContains(response, 'id="config-search-input"')
+        total = response.context['total_items']
+        self.assertContains(response, f'{total} de {total}')
+
+    def test_sin_items_no_muestra_el_buscador(self):
+        self.assertEqual(Tercero.objects.count(), 0)
+        response = self.client.get(reverse('taller:configuracion_tab', args=['tercero']))
+        self.assertNotContains(response, 'id="config-search-input"')
+        self.assertContains(response, 'Todavía no hay ítems acá.')
+
+
+class StockFilasClickeablesTests(TestCase):
+    """Cada fila de Stock linkea al gasto de compra, con ?next= para
+    volver a Stock (no a Gastos) al cancelar o guardar esa edición; la
+    tabla también muestra la fecha de compra."""
+
+    def setUp(self):
+        self.tipo_celular = TipoDispositivo.objects.get(nombre='Celular')
+        cat_repuestos = CategoriaGasto.objects.get(nombre='Repuestos')
+        self.proveedor = Proveedor.objects.create(nombre='Distribuidora Stock Test')
+        self.tipo_repuesto = TipoRepuesto.objects.filter(tipo_dispositivo=self.tipo_celular).first()
+        self.marca = Marca.objects.filter(tipo_dispositivo=self.tipo_celular).first()
+        self.gasto = Gasto.objects.create(
+            descripcion='Glass', categoria=cat_repuestos, fecha=date(2026, 7, 15),
+            proveedor=self.proveedor, tipo_dispositivo=self.tipo_celular,
+            tipo_repuesto=self.tipo_repuesto, marca=self.marca,
+            cantidad=5, precio_unitario=Decimal('1000'), monto=Decimal('5000'),
+        )
+
+    def test_la_fila_linkea_al_gasto_con_next_a_stock(self):
+        response = self.client.get(reverse('taller:stock_list'))
+        gasto_edit_url = reverse('taller:gasto_edit', args=[self.gasto.pk])
+        self.assertContains(response, f'data-href="{gasto_edit_url}?next=/stock/"')
+        self.assertContains(response, f'href="{gasto_edit_url}?next=/stock/"')
+
+    def test_la_tabla_muestra_la_fecha_de_compra(self):
+        response = self.client.get(reverse('taller:stock_list'))
+        self.assertContains(response, '15/07/2026')
+
+    def test_cancelar_en_la_edicion_vuelve_a_stock_no_a_gastos(self):
+        response = self.client.get(f"{reverse('taller:gasto_edit', args=[self.gasto.pk])}?next=/stock/")
+        self.assertContains(response, 'href="/stock/"')
+
+    def test_guardar_con_next_redirige_a_stock(self):
+        response = self.client.post(
+            f"{reverse('taller:gasto_edit', args=[self.gasto.pk])}?next=/stock/",
+            data={
+                'fecha': '2026-07-15', 'categoria': self.gasto.categoria_id,
+                'descripcion': 'Glass', 'cantidad': '5', 'precio_unitario': '1000',
+                'tipo_dispositivo': self.tipo_celular.pk,
+                'tipo_repuesto': self.tipo_repuesto.pk, 'marca': self.marca.pk,
+                'modelo': '', 'proveedor': self.proveedor.pk,
+            },
+        )
+        self.assertRedirects(response, '/stock/')
+
+    def test_guardar_sin_next_mantiene_el_comportamiento_anterior(self):
+        response = self.client.post(
+            reverse('taller:gasto_edit', args=[self.gasto.pk]),
+            data={
+                'fecha': '2026-07-15', 'categoria': self.gasto.categoria_id,
+                'descripcion': 'Glass', 'cantidad': '5', 'precio_unitario': '1000',
+                'tipo_dispositivo': self.tipo_celular.pk,
+                'tipo_repuesto': self.tipo_repuesto.pk, 'marca': self.marca.pk,
+                'modelo': '', 'proveedor': self.proveedor.pk,
+            },
+        )
+        self.assertRedirects(response, f"{reverse('taller:gasto_create')}?mes=2026-07")

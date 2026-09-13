@@ -1,5 +1,5 @@
 {% extends 'taller/base.html' %}
-{% load taller_extras %}
+{% load static taller_extras %}
 
 {% block title %}{% if form.instance.pk %}Editar trabajo{% else %}Nuevo trabajo{% endif %} · Gestión Taller{% endblock %}
 
@@ -130,8 +130,17 @@
             {% for error in formset.non_form_errors %}<div class="field-error">{{ error }}</div>{% endfor %}
         </div>
 
-        <details class="tercerizacion-section">
-            <summary>Tercerización (opcional)</summary>
+        <details class="tercerizacion-section" id="tercerizacion-details" {% if trabajo and trabajo.tercerizado_monto %}open{% endif %}>
+            <summary>
+                <span class="tercerizacion-titulo">Tercerización (opcional)</span>
+                {% if trabajo and trabajo.tercerizado_monto %}
+                    <button type="button" id="btn-quitar-tercerizacion" class="btn btn-sm btn-danger-outline"
+                            data-monto="{{ trabajo.tercerizado_monto|moneda }}"
+                            data-tercero="{{ trabajo.tercero.nombre|default:'el tercero' }}">
+                        {% nav_icon 'trash' %} Quitar tercerización
+                    </button>
+                {% endif %}
+            </summary>
             <div class="form-group">
                 <label for="id_tercero">{{ form.tercero.label }}</label>
                 <div class="field-with-add">
@@ -168,6 +177,7 @@
     </form>
 </div>
 
+<script src="{% static 'taller/js/combobox_buscable.js' %}"></script>
 <script>
 (function () {
     var tipoRadios = document.querySelectorAll('.tipo-dispositivo-radio');
@@ -181,7 +191,12 @@
             opt.hidden = valorPadre !== '' && opt.getAttribute(atributo) !== valorPadre;
         });
         var actual = select.options[select.selectedIndex];
-        if (actual && actual.hidden) { select.value = ''; }
+        if (actual && actual.hidden) {
+            select.value = '';
+            // El combobox de búsqueda (si este select tiene uno) escucha
+            // 'change' para mantener sincronizado lo que muestra su input.
+            select.dispatchEvent(new Event('change'));
+        }
     }
 
     function tipoDispositivoActual() {
@@ -196,6 +211,7 @@
         actualizarModelo();
         document.querySelectorAll('.repuesto-gasto-select').forEach(function (select) {
             filtrarPorAtributo(select, 'data-tipo-dispositivo', valor);
+            actualizarMaximoRepuesto(select.closest('.repuesto-usado-row'));
         });
     }
 
@@ -266,19 +282,89 @@
             });
     });
 
+    var btnQuitarTercerizacion = document.getElementById('btn-quitar-tercerizacion');
+    if (btnQuitarTercerizacion) {
+        btnQuitarTercerizacion.addEventListener('click', function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            var monto = btnQuitarTercerizacion.getAttribute('data-monto');
+            var tercero = btnQuitarTercerizacion.getAttribute('data-tercero');
+            var confirmado = window.confirm(
+                '¿Quitar la tercerización de ' + monto + ' a ' + tercero + '? Se eliminará el gasto asociado.'
+            );
+            if (!confirmado) { return; }
+            terceroSelect.value = '';
+            document.getElementById('id_tercerizado_detalle').value = '';
+            document.getElementById('id_tercerizado_monto').value = '';
+            document.getElementById('tercerizacion-details').removeAttribute('open');
+            btnQuitarTercerizacion.hidden = true;
+        });
+    }
+
     // --- Repuestos usados: agregar/quitar filas ---
     var listaRepuestos = document.getElementById('repuestos-usados-lista');
     var totalFormsInput = document.getElementById('id_repuestos_usados-TOTAL_FORMS');
     var plantillaVacia = document.getElementById('repuesto-usado-empty-form');
 
+    function actualizarMaximoRepuesto(fila) {
+        var select = fila.querySelector('.repuesto-gasto-select');
+        var maxSpan = fila.querySelector('.repuesto-cantidad-max');
+        var cantidadInput = fila.querySelector('.repuesto-cantidad-input');
+        if (!select || !maxSpan) { return; }
+        var opcion = select.options[select.selectedIndex];
+        var stock = opcion ? opcion.getAttribute('data-stock') : null;
+        if (select.value && stock !== null && stock !== '') {
+            maxSpan.textContent = 'máx. ' + stock;
+            maxSpan.hidden = false;
+            if (cantidadInput) { cantidadInput.max = stock; }
+        } else {
+            maxSpan.textContent = '';
+            maxSpan.hidden = true;
+            if (cantidadInput) { cantidadInput.removeAttribute('max'); }
+        }
+    }
+
+    function marcarQuitado(fila) {
+        var idInput = fila.querySelector('input[name$="-id"]');
+        var esNueva = !idInput || !idInput.value;
+
+        if (esNueva) {
+            fila.classList.add('repuesto-usado-desvanecer');
+            window.setTimeout(function () { fila.remove(); }, 180);
+            return;
+        }
+
+        var checkboxDelete = fila.querySelector('input[name$="-DELETE"]');
+        var cantidadInput = fila.querySelector('.repuesto-cantidad-input');
+        var cantidad = (cantidadInput && cantidadInput.value) ? cantidadInput.value : '1';
+        var controles = fila.querySelector('.repuesto-usado-controles');
+        var info = fila.querySelector('.repuesto-usado-quitado-info');
+        var cantidadSpan = fila.querySelector('.repuesto-usado-quitado-cantidad');
+
+        if (checkboxDelete) { checkboxDelete.checked = true; }
+        if (cantidadSpan) { cantidadSpan.textContent = cantidad; }
+        if (controles) { controles.hidden = true; }
+        if (info) { info.hidden = false; }
+    }
+
+    function deshacerQuitado(fila) {
+        var checkboxDelete = fila.querySelector('input[name$="-DELETE"]');
+        if (checkboxDelete) { checkboxDelete.checked = false; }
+        var controles = fila.querySelector('.repuesto-usado-controles');
+        var info = fila.querySelector('.repuesto-usado-quitado-info');
+        if (controles) { controles.hidden = false; }
+        if (info) { info.hidden = true; }
+    }
+
     function inicializarFilaQuitar(fila) {
         var btnQuitar = fila.querySelector('.repuesto-usado-quitar');
-        if (btnQuitar) {
-            btnQuitar.addEventListener('click', function () {
-                var checkboxDelete = fila.querySelector('input[name$="-DELETE"]');
-                if (checkboxDelete) { checkboxDelete.checked = true; }
-                fila.hidden = true;
-            });
+        if (btnQuitar) { btnQuitar.addEventListener('click', function () { marcarQuitado(fila); }); }
+        var btnDeshacer = fila.querySelector('.repuesto-usado-deshacer');
+        if (btnDeshacer) { btnDeshacer.addEventListener('click', function () { deshacerQuitado(fila); }); }
+        var select = fila.querySelector('.repuesto-gasto-select');
+        if (select) {
+            iniciarComboboxBuscable(select, { placeholder: 'Buscar por número, tipo, marca o modelo...' });
+            select.addEventListener('change', function () { actualizarMaximoRepuesto(fila); });
         }
     }
 
@@ -286,6 +372,7 @@
         inicializarFilaQuitar(fila);
         var select = fila.querySelector('.repuesto-gasto-select');
         if (select) { filtrarPorAtributo(select, 'data-tipo-dispositivo', tipoDispositivoActual()); }
+        actualizarMaximoRepuesto(fila);
     });
 
     document.getElementById('btn-agregar-repuesto').addEventListener('click', function () {
@@ -299,6 +386,7 @@
         inicializarFilaQuitar(nuevaFila);
         var select = nuevaFila.querySelector('.repuesto-gasto-select');
         if (select) { filtrarPorAtributo(select, 'data-tipo-dispositivo', tipoDispositivoActual()); }
+        actualizarMaximoRepuesto(nuevaFila);
     });
 })();
 </script>

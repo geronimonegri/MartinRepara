@@ -42,36 +42,101 @@
 
     <div class="panel-card">
         <h2 class="panel-title">{{ label_actual }}</h2>
-        <div class="config-items-list">
-            {% for item in items %}
-                <div class="config-item-row{% if not item.activo %} config-item-inactivo{% endif %}">
-                    <div class="config-item-info">
-                        {% if item.color %}<span class="legend-dot" style="background:{{ item.color }};"></span>{% endif %}
-                        <div>
-                            <div class="row-title">{{ item.nombre }}</div>
-                            <div class="row-subtitle">
-                                {% if item.categoria %}{{ item.categoria.nombre }}{% endif %}
-                                {% if item.tipo_dispositivo %}{{ item.tipo_dispositivo.nombre }}{% endif %}
-                                {% if item.marca %}{{ item.marca.nombre }}{% endif %}
-                                {% if item.telefono %}{{ item.telefono }}{% endif %}
-                                {% if not item.activo %}· Desactivado{% endif %}
+        {% if total_items %}
+            <div class="config-search-row">
+                <input type="text" id="config-search-input" class="form-control config-search-input"
+                       placeholder="Buscar..." autocomplete="off">
+                <span class="config-search-contador" id="config-search-contador">{{ total_items }} de {{ total_items }}</span>
+            </div>
+            <div class="config-items-list" id="config-items-list">
+                {% for grupo in grupos %}
+                    <div class="config-group">
+                        {% if grupo.nombre %}<div class="config-group-titulo">{{ grupo.nombre }}</div>{% endif %}
+                        {% for item in grupo.items %}
+                            <div class="config-item-row{% if not item.activo %} config-item-inactivo{% endif %}">
+                                <div class="config-item-info">
+                                    {% if item.color %}<span class="legend-dot" style="background:{{ item.color }};"></span>{% endif %}
+                                    <div>
+                                        <div class="row-title">{{ item.nombre }}</div>
+                                        <div class="row-subtitle">
+                                            {% if item.categoria %}{{ item.categoria.nombre }}{% endif %}
+                                            {% if item.tipo_dispositivo %}{{ item.tipo_dispositivo.nombre }}{% endif %}
+                                            {% if item.marca %}{{ item.marca.nombre }}{% endif %}
+                                            {% if item.telefono %}{{ item.telefono }}{% endif %}
+                                            {% if not item.activo %}· Desactivado{% endif %}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="row-actions">
+                                    <a href="{% url 'taller:configuracion_editar' tab=tab_actual pk=item.pk %}" class="icon-btn" aria-label="Editar" title="Editar">
+                                        {% nav_icon 'edit' %}
+                                    </a>
+                                    <form method="post" action="{% url 'taller:catalogo_toggle_activo' tab=tab_actual pk=item.pk %}" class="icon-form">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-sm btn-outline">{% if item.activo %}Desactivar{% else %}Activar{% endif %}</button>
+                                    </form>
+                                </div>
                             </div>
-                        </div>
+                        {% endfor %}
                     </div>
-                    <div class="row-actions">
-                        <a href="{% url 'taller:configuracion_editar' tab=tab_actual pk=item.pk %}" class="icon-btn" aria-label="Editar" title="Editar">
-                            {% nav_icon 'edit' %}
-                        </a>
-                        <form method="post" action="{% url 'taller:catalogo_toggle_activo' tab=tab_actual pk=item.pk %}" class="icon-form">
-                            {% csrf_token %}
-                            <button type="submit" class="btn btn-sm btn-outline">{% if item.activo %}Desactivar{% else %}Activar{% endif %}</button>
-                        </form>
-                    </div>
-                </div>
-            {% empty %}
-                <div class="empty-state">Todavía no hay ítems acá.</div>
-            {% endfor %}
-        </div>
+                {% endfor %}
+            </div>
+            <div class="empty-state config-search-vacio" id="config-search-vacio" hidden></div>
+        {% else %}
+            <div class="empty-state">Todavía no hay ítems acá.</div>
+        {% endif %}
     </div>
 </div>
+
+<script>
+(function () {
+    var input = document.getElementById('config-search-input');
+    if (!input) { return; }
+
+    var contador = document.getElementById('config-search-contador');
+    var vacio = document.getElementById('config-search-vacio');
+    var grupos = document.querySelectorAll('.config-group');
+    var filas = document.querySelectorAll('.config-item-row');
+    var total = filas.length;
+
+    function normalizar(texto) {
+        return (texto || '')
+            .toString()
+            .normalize('NFD')
+            .replace(/[̀-ͯ]/g, '')
+            .toLowerCase();
+    }
+
+    function textoDeFila(fila) {
+        var titulo = fila.querySelector('.row-title');
+        var subtitulo = fila.querySelector('.row-subtitle');
+        return normalizar((titulo ? titulo.textContent : '') + ' ' + (subtitulo ? subtitulo.textContent : ''));
+    }
+
+    input.addEventListener('input', function () {
+        var consulta = normalizar(input.value);
+        var visibles = 0;
+
+        filas.forEach(function (fila) {
+            var coincide = consulta === '' || textoDeFila(fila).indexOf(consulta) !== -1;
+            fila.hidden = !coincide;
+            if (coincide) { visibles += 1; }
+        });
+
+        grupos.forEach(function (grupo) {
+            var tieneVisibles = grupo.querySelector('.config-item-row:not([hidden])');
+            grupo.hidden = !tieneVisibles;
+        });
+
+        contador.textContent = visibles + ' de ' + total;
+
+        if (visibles === 0 && consulta !== '') {
+            vacio.textContent = 'Sin resultados para "' + input.value.trim() + '"';
+            vacio.hidden = false;
+        } else {
+            vacio.hidden = true;
+        }
+    });
+})();
+</script>
 {% endblock %}
