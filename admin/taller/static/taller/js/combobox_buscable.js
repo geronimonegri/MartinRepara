@@ -112,6 +112,20 @@ function iniciarComboboxBuscable(select, opciones) {
         }
         activo = -1;
         lista.hidden = false;
+        ubicarLista();
+    }
+
+    // Por default la lista se abre hacia abajo. Si no entra entre el
+    // input y el borde inferior de la ventana (pantalla chica, escalado
+    // de Windows, input cerca del fondo del form), y arriba hay más
+    // lugar, se abre hacia arriba en su lugar — así nunca queda cortada.
+    function ubicarLista() {
+        var rectInput = input.getBoundingClientRect();
+        var espacioAbajo = window.innerHeight - rectInput.bottom;
+        var espacioArriba = rectInput.top;
+        var alturaLista = lista.offsetHeight;
+        var abrirArriba = alturaLista > espacioAbajo && espacioArriba > espacioAbajo;
+        lista.classList.toggle('combobox-buscable-lista-arriba', abrirArriba);
     }
 
     input.addEventListener('input', function () {

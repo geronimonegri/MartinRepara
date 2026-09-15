@@ -34,11 +34,14 @@
                 {% endfor %}
             </select>
             <div class="fecha-entrega-popup" hidden>
-                <label>Fecha de entrega</label>
-                <input type="date" class="fecha-entrega-visible form-control">
-                <div class="fecha-entrega-popup-actions">
-                    <button type="button" class="btn btn-sm btn-primary fecha-entrega-confirmar">Confirmar</button>
-                    <button type="button" class="btn btn-sm btn-outline fecha-entrega-cancelar">Cancelar</button>
+                <div class="fecha-entrega-popup-backdrop"></div>
+                <div class="fecha-entrega-popup-panel">
+                    <label>Fecha de entrega</label>
+                    <input type="date" class="fecha-entrega-visible form-control">
+                    <div class="fecha-entrega-popup-actions">
+                        <button type="button" class="btn btn-sm btn-primary fecha-entrega-confirmar">Confirmar</button>
+                        <button type="button" class="btn btn-sm btn-outline fecha-entrega-cancelar">Cancelar</button>
+                    </div>
                 </div>
             </div>
         </form>
